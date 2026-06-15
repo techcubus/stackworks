@@ -3,7 +3,9 @@
 #include "nuklear.h"
 #include "nuklear_sdl_renderer.h"
 #include "stack.h"
-#include "render.h"
+#include "ui/render.h"
+#include "ui/card_view.h"
+#include "ui/menu.h"
 
 static void update_title(Renderer *r, const Stack *s, uint32_t idx) {
     char buf[64];
@@ -78,32 +80,15 @@ int main(int argc, char *argv[]) {
                 }
                 update_title(r, s, cur);
                 break;
-            case SDL_WINDOWEVENT:
-                break;
+            default: break;
             }
         }
         nk_input_end(r->nk);
 
-        /* menu bar */
-        struct nk_context *nk = r->nk;
         int ww, wh;
         SDL_GetWindowSize(r->window, &ww, &wh);
-        if (nk_begin(nk, "menubar", nk_rect(0, 0, (float)ww, MENU_BAR_H),
-                     NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
-            nk_menubar_begin(nk);
-            nk_layout_row_begin(nk, NK_STATIC, MENU_BAR_H - 4, 1);
-            nk_layout_row_push(nk, 45);
-            if (nk_menu_begin_label(nk, "File", NK_TEXT_LEFT,
-                                    nk_vec2(120, 60))) {
-                nk_layout_row_dynamic(nk, 24, 1);
-                if (nk_menu_item_label(nk, "Quit", NK_TEXT_LEFT))
-                    running = 0;
-                nk_menu_end(nk);
-            }
-            nk_layout_row_end(nk);
-            nk_menubar_end(nk);
-        }
-        nk_end(nk);
+        if (menu_draw(r->nk, ww))
+            running = 0;
 
         renderer_draw_card(r, s, cur);
         nk_sdl_render(NK_ANTI_ALIASING_ON);

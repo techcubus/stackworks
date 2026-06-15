@@ -1,8 +1,8 @@
-#ifndef RENDER_H
-#define RENDER_H
+#ifndef UI_RENDER_H
+#define UI_RENDER_H
 
 #include <SDL2/SDL.h>
-#include "stack.h"
+#include <stdint.h>
 
 struct nk_context;
 
@@ -19,6 +19,5 @@ typedef struct {
 
 Renderer *renderer_create(uint16_t width, uint16_t height);
 void      renderer_destroy(Renderer *r);
-void      renderer_draw_card(Renderer *r, const Stack *s, uint32_t card_idx);
 
-#endif /* RENDER_H */
+#endif /* UI_RENDER_H */
