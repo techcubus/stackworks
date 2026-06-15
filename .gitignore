@@ -1,0 +1,8 @@
+cardviewer
+src/*.o
+*.hc
+*.hc.rsrc
+*.img
+*.data
+*.dirtychunks
+*.png
