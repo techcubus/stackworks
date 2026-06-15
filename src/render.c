@@ -1,3 +1,8 @@
+#define NK_IMPLEMENTATION
+#include "nuklear.h"
+#define NK_SDL_RENDERER_IMPLEMENTATION
+#include "nuklear_sdl_renderer.h"
+
 #include "render.h"
 #include <stdlib.h>
 #include <string.h>
@@ -15,7 +20,7 @@ Renderer *renderer_create(uint16_t width, uint16_t height) {
     }
     r->window = SDL_CreateWindow("cardviewer",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        width * 2, height * 2,
+        width * 2, height * 2 + MENU_BAR_H,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (!r->window) {
         fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
@@ -36,11 +41,18 @@ Renderer *renderer_create(uint16_t width, uint16_t height) {
         SDL_DestroyRenderer(r->renderer);
         SDL_DestroyWindow(r->window); SDL_Quit(); free(r); return NULL;
     }
+
+    r->nk = nk_sdl_init(r->window, r->renderer);
+    struct nk_font_atlas *atlas;
+    nk_sdl_font_stash_begin(&atlas);
+    nk_sdl_font_stash_end();
+
     return r;
 }
 
 void renderer_destroy(Renderer *r) {
     if (!r) return;
+    nk_sdl_shutdown();
     SDL_DestroyTexture(r->tex);
     SDL_DestroyRenderer(r->renderer);
     SDL_DestroyWindow(r->window);
@@ -71,12 +83,12 @@ static void draw_rect_outline(uint32_t *pixels, int pitch_px,
                                uint16_t W, uint16_t H, uint32_t color) {
     for (int x = l; x < r; x++) {
         if (x < 0 || x >= W) continue;
-        if (t >= 0 && t < H)   pixels[t * pitch_px + x] = color;
+        if (t >= 0 && t < H)     pixels[t * pitch_px + x] = color;
         if (b-1 >= 0 && b-1 < H) pixels[(b-1) * pitch_px + x] = color;
     }
     for (int y = t; y < b; y++) {
         if (y < 0 || y >= H) continue;
-        if (l >= 0 && l < W)   pixels[y * pitch_px + l] = color;
+        if (l >= 0 && l < W)     pixels[y * pitch_px + l] = color;
         if (r-1 >= 0 && r-1 < W) pixels[y * pitch_px + r-1] = color;
     }
 }
@@ -122,11 +134,10 @@ void renderer_draw_card(Renderer *r, const Stack *s, uint32_t card_idx) {
 
     SDL_UnlockTexture(r->tex);
 
-    /* scale to window if it was resized */
     int ww, wh;
     SDL_GetWindowSize(r->window, &ww, &wh);
-    SDL_Rect dst = { 0, 0, ww, wh };
+    SDL_Rect dst = { 0, MENU_BAR_H, ww, wh - MENU_BAR_H };
     SDL_RenderClear(r->renderer);
     SDL_RenderCopy(r->renderer, r->tex, NULL, &dst);
-    SDL_RenderPresent(r->renderer);
+    /* caller renders Nuklear then calls SDL_RenderPresent */
 }

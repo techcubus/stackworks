@@ -4,12 +4,17 @@
 #include <SDL2/SDL.h>
 #include "stack.h"
 
+struct nk_context;
+
+#define MENU_BAR_H 25
+
 typedef struct {
-    SDL_Window   *window;
-    SDL_Renderer *renderer;
-    SDL_Texture  *tex;
-    uint16_t      width;
-    uint16_t      height;
+    SDL_Window        *window;
+    SDL_Renderer      *renderer;
+    SDL_Texture       *tex;
+    uint16_t           width;
+    uint16_t           height;
+    struct nk_context *nk;
 } Renderer;
 
 Renderer *renderer_create(uint16_t width, uint16_t height);

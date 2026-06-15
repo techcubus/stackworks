@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <SDL2/SDL.h>
+#include "nuklear.h"
+#include "nuklear_sdl_renderer.h"
 #include "stack.h"
 #include "render.h"
 
@@ -46,44 +48,69 @@ int main(int argc, char *argv[]) {
 
     uint32_t cur = 0;
     update_title(r, s, cur);
-    renderer_draw_card(r, s, cur);
 
-    SDL_Event ev;
-    while (SDL_WaitEvent(&ev)) {
-        switch (ev.type) {
-        case SDL_QUIT:
-            goto done;
-        case SDL_KEYDOWN:
-            switch (ev.key.keysym.sym) {
-            case SDLK_ESCAPE: case SDLK_q:
-                goto done;
-            case SDLK_RIGHT: case SDLK_SPACE: case SDLK_RETURN:
-                if (cur + 1 < s->card_count) cur++;
+    int running = 1;
+    while (running) {
+        SDL_Event ev;
+
+        nk_input_begin(r->nk);
+        while (SDL_PollEvent(&ev)) {
+            nk_sdl_handle_event(&ev);
+            switch (ev.type) {
+            case SDL_QUIT:
+                running = 0;
                 break;
-            case SDLK_LEFT: case SDLK_BACKSPACE:
-                if (cur > 0) cur--;
+            case SDL_KEYDOWN:
+                switch (ev.key.keysym.sym) {
+                case SDLK_ESCAPE: case SDLK_q:
+                    running = 0; break;
+                case SDLK_RIGHT: case SDLK_SPACE: case SDLK_RETURN:
+                    if (cur + 1 < s->card_count) cur++;
+                    break;
+                case SDLK_LEFT: case SDLK_BACKSPACE:
+                    if (cur > 0) cur--;
+                    break;
+                case SDLK_HOME:
+                    cur = 0; break;
+                case SDLK_END:
+                    cur = s->card_count - 1; break;
+                default: break;
+                }
+                update_title(r, s, cur);
                 break;
-            case SDLK_HOME:
-                cur = 0;
+            case SDL_WINDOWEVENT:
                 break;
-            case SDLK_END:
-                cur = s->card_count - 1;
-                break;
-            default:
-                continue;
             }
-            update_title(r, s, cur);
-            renderer_draw_card(r, s, cur);
-            break;
-        case SDL_WINDOWEVENT:
-            if (ev.window.event == SDL_WINDOWEVENT_EXPOSED ||
-                ev.window.event == SDL_WINDOWEVENT_RESIZED)
-                renderer_draw_card(r, s, cur);
-            break;
         }
+        nk_input_end(r->nk);
+
+        /* menu bar */
+        struct nk_context *nk = r->nk;
+        int ww, wh;
+        SDL_GetWindowSize(r->window, &ww, &wh);
+        if (nk_begin(nk, "menubar", nk_rect(0, 0, (float)ww, MENU_BAR_H),
+                     NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
+            nk_menubar_begin(nk);
+            nk_layout_row_begin(nk, NK_STATIC, MENU_BAR_H - 4, 1);
+            nk_layout_row_push(nk, 45);
+            if (nk_menu_begin_label(nk, "File", NK_TEXT_LEFT,
+                                    nk_vec2(120, 60))) {
+                nk_layout_row_dynamic(nk, 24, 1);
+                if (nk_menu_item_label(nk, "Quit", NK_TEXT_LEFT))
+                    running = 0;
+                nk_menu_end(nk);
+            }
+            nk_layout_row_end(nk);
+            nk_menubar_end(nk);
+        }
+        nk_end(nk);
+
+        renderer_draw_card(r, s, cur);
+        nk_sdl_render(NK_ANTI_ALIASING_ON);
+        SDL_RenderPresent(r->renderer);
+        SDL_Delay(16);
     }
 
-done:
     renderer_destroy(r);
     stack_free(s);
     return 0;
