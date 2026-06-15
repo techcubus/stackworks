@@ -15,12 +15,13 @@ Renderer *renderer_create(uint16_t width, uint16_t height) {
     }
     r->window = SDL_CreateWindow("cardviewer",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        width, height,
+        width * 2, height * 2,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
     if (!r->window) {
         fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
         SDL_Quit(); free(r); return NULL;
     }
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
     r->renderer = SDL_CreateRenderer(r->window, -1,
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!r->renderer) {
