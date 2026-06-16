@@ -21,16 +21,31 @@
 #define PART_BUTTON  1
 #define PART_FIELD   2
 
+/* Button style — upper nibble of part record +0x0E.
+ * Confirmed: rectangle=2 (Home/Prev/Next), shadow=3 (Find). */
+#define BTN_STYLE_RECTANGLE    2
+#define BTN_STYLE_SHADOW       3
+
+/* Field style — byte at part record +0x0F.
+ * Confirmed: rectangle=0 (Name&Address, Phone), shadow=4 (Card Number, Notes).
+ * Value 1 seen on Stack Title field; meaning not yet confirmed. */
+#define FLD_STYLE_RECTANGLE    0
+#define FLD_STYLE_SHADOW       4
+
 typedef struct {
     int16_t top, left, bottom, right;
 } HCRect;
 
 typedef struct {
     uint16_t id;
-    uint8_t  type;     /* PART_BUTTON or PART_FIELD */
+    uint8_t  type;       /* PART_BUTTON or PART_FIELD */
     uint8_t  visible;
     HCRect   rect;
     uint8_t  style;
+    uint16_t font_id;    /* Mac font family ID: 3=Geneva, 21=Helvetica, etc. */
+    uint16_t text_size;  /* point size (0 = use stack default) */
+    uint8_t  text_style; /* bold=0x01, italic=0x02, underline=0x04, ... */
+    uint8_t  text_align; /* 0=left, 1=center, 2=right */
     char    *name;
     char    *script;
 } Part;
@@ -44,13 +59,19 @@ typedef struct {
 } Background;
 
 typedef struct {
-    uint32_t  id;
-    uint32_t  bkgd_id;
-    uint16_t  part_count;
-    Part     *parts;
-    char    **field_text;  /* parallel to parts[], NULL for buttons */
-    uint8_t  *bitmap;
-    char     *script;
+    uint16_t  part_id;  /* background field's part id */
+    char     *text;     /* Mac Roman, \r-separated, null-term; NULL = empty */
+} FieldContent;
+
+typedef struct {
+    uint32_t      id;
+    uint32_t      bkgd_id;
+    uint16_t      part_count;
+    Part         *parts;
+    uint16_t      content_count;
+    FieldContent *content;   /* per-bkgd-field text, keyed by part_id */
+    uint8_t      *bitmap;
+    char         *script;
 } Card;
 
 typedef struct {
@@ -68,6 +89,7 @@ typedef struct {
 Stack      *stack_load(const char *path);
 void        stack_free(Stack *s);
 Background *stack_find_bkgd(const Stack *s, uint32_t id);
+const char *card_field_text(const Card *c, uint16_t part_id);
 void        stack_dump(const Stack *s, FILE *out);
 
 #endif /* STACK_H */

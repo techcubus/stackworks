@@ -3,7 +3,38 @@
 
 struct nk_context;
 
-/* Build and draw the menu bar. Returns 1 if Quit was selected, 0 otherwise. */
-int menu_draw(struct nk_context *nk, int window_width);
+typedef enum {
+    MENU_ACTION_NONE = 0,
+    MENU_ACTION_QUIT,
+    MENU_ACTION_ABOUT,
+    MENU_ACTION_OPEN,
+    MENU_ACTION_GO_PREV,
+    MENU_ACTION_GO_NEXT,
+    MENU_ACTION_GO_HOME,
+} MenuAction;
+
+#define MENU_MAX       8
+#define MENU_ITEM_MAX 16
+
+typedef struct {
+    char       title[64];
+    int        separator;
+    MenuAction action;
+    char       key[16];
+} MenuItem;
+
+typedef struct {
+    char     title[64];
+    MenuItem items[MENU_ITEM_MAX];
+    int      item_count;
+} Menu;
+
+typedef struct {
+    Menu menus[MENU_MAX];
+    int  menu_count;
+} MenuBar;
+
+int        menubar_load(MenuBar *mb, const char *path);
+MenuAction menu_draw(MenuBar *mb, struct nk_context *nk, int window_width);
 
 #endif /* UI_MENU_H */

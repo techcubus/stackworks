@@ -1,0 +1,21 @@
+{
+  "menus": [
+    {
+      "title": "🍌 Banana",
+      "items": [
+        { "title": "About cardviewer", "action": "about" },
+        { "separator": true },
+        { "title": "Quit",             "action": "quit"  }
+      ]
+    },
+    {
+      "title": "Go",
+      "items": [
+        { "title": "Previous", "action": "go_prev" },
+        { "title": "Next",     "action": "go_next" },
+        { "separator": true },
+        { "title": "Home",     "action": "go_home" }
+      ]
+    }
+  ]
+}

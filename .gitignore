@@ -1,6 +1,8 @@
 cardviewer
 src/*.o
+src/*.d
 src/ui/*.o
+src/ui/*.d
 *.hc
 *.hc.rsrc
 *.img

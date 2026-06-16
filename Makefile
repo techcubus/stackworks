@@ -4,12 +4,13 @@ NK_FLAGS = -DNK_INCLUDE_FIXED_TYPES -DNK_INCLUDE_STANDARD_IO \
            -DNK_INCLUDE_FONT_BAKING -DNK_INCLUDE_DEFAULT_FONT \
            -DNK_INCLUDE_STANDARD_VARARGS
 CFLAGS = -Wall -Wextra -std=c11 -g -D_POSIX_C_SOURCE=200809L \
-         $(shell sdl2-config --cflags) -Isrc $(NK_FLAGS)
-LDFLAGS = $(shell sdl2-config --libs) -lm
+         $(shell sdl2-config --cflags) -Isrc $(NK_FLAGS) -MMD -MP
+LDFLAGS = $(shell sdl2-config --libs) $(shell pkg-config --libs SDL2_ttf) -lm
 
 SRCS = src/main.c src/stack.c src/woba.c \
        src/ui/render.c src/ui/card_view.c src/ui/menu.c
 OBJS = $(SRCS:.c=.o)
+DEPS = $(OBJS:.o=.d)
 TARGET = cardviewer
 
 $(TARGET): $(OBJS)
@@ -18,7 +19,9 @@ $(TARGET): $(OBJS)
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+-include $(DEPS)
+
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(DEPS) $(TARGET)
 
 .PHONY: clean

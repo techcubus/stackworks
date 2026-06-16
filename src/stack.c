@@ -78,9 +78,10 @@ static const uint8_t *blkbody(const FileCtx *ctx, const BlockEntry *e) {
  */
 #define PART_HDR_MIN 0x1E
 
-static Part *parse_parts(const uint8_t *data, uint32_t avail, uint16_t count) {
+static Part *parse_parts(const uint8_t *data, uint32_t avail, uint16_t count,
+                          uint32_t *bytes_consumed) {
     Part *parts = calloc(count, sizeof *parts);
-    if (!parts) return NULL;
+    if (!parts) { if (bytes_consumed) *bytes_consumed = 0; return NULL; }
 
     const uint8_t *p = data;
     const uint8_t *end = data + avail;
@@ -97,7 +98,19 @@ static Part *parse_parts(const uint8_t *data, uint32_t avail, uint16_t count) {
         parts[i].rect.left   = r16s(p + 0x08);
         parts[i].rect.bottom = r16s(p + 0x0A);
         parts[i].rect.right  = r16s(p + 0x0C);
-        parts[i].style   = p[0x0E];
+        /* Buttons: style in upper nibble of +0x0E. Fields: style in +0x0F. */
+        if (parts[i].type == PART_BUTTON)
+            parts[i].style = (p[0x0E] >> 4) & 0x0F;
+        else
+            parts[i].style = p[0x0F];
+
+        /* font attributes — only present when record is large enough */
+        if (rec_size > 0x1A) {
+            parts[i].text_align  = (uint8_t)(r16(p + 0x10) & 0xFF);
+            parts[i].font_id     = r16(p + 0x16);
+            parts[i].text_size   = r16(p + 0x18);
+            parts[i].text_style  = p[0x14];
+        }
 
         if (rec_size > PART_HDR_MIN) {
             const char *name = (const char *)(p + PART_HDR_MIN);
@@ -108,7 +121,59 @@ static Part *parse_parts(const uint8_t *data, uint32_t avail, uint16_t count) {
 
         p += rec_size;
     }
+    if (bytes_consumed) *bytes_consumed = (uint32_t)(p - data);
     return parts;
+}
+
+/* Parse the field content section that follows card-layer part records.
+ * Layout: uint16 entry_count, uint16 unknown, uint16 total_size,
+ *         then entries: uint16 part_id, uint16 text_size, uint8 style_flag,
+ *                       char[text_size] text (Mac Roman, \r-separated, null-term).
+ * style_flag 0x00 = plain; non-zero = styled text with embedded run table (skipped). */
+static uint16_t parse_card_content(const uint8_t *p, uint32_t avail,
+                                    FieldContent **out) {
+    *out = NULL;
+    if (avail < 6) return 0;
+
+    uint16_t entry_count = r16(p);
+    /* p[2-3] = unknown */
+    uint16_t total_size  = r16(p + 4);
+
+    if (entry_count == 0 || total_size == 0) return 0;
+    if (avail < (uint32_t)(6 + total_size)) return 0;
+
+    FieldContent *fc = calloc(entry_count, sizeof *fc);
+    if (!fc) return 0;
+
+    const uint8_t *ep  = p + 6;
+    const uint8_t *end = ep + total_size;
+    uint16_t count = 0;
+
+    for (uint16_t i = 0; i < entry_count && ep + 5 <= end; i++) {
+        uint16_t part_id   = r16(ep);
+        uint16_t text_size = r16(ep + 2);
+        uint8_t  style     = ep[4];
+        ep += 5;
+
+        if (ep + text_size > end) break;
+
+        fc[count].part_id = part_id;
+        if (style == 0x00 && text_size > 0) {
+            size_t len = strnlen((const char *)ep, text_size);
+            fc[count].text = strndup((const char *)ep, len);
+        }
+        /* style != 0: styled text (embedded run table before text); skip */
+
+        ep += text_size;
+        /* Each entry's null terminator doubles as the 0x00 high byte of the
+         * next entry's part_id (part IDs always fit in a byte).  Back up by
+         * one so the next iteration reads the full uint16 correctly. */
+        if (ep > p + 6) ep--;
+        count++;
+    }
+
+    *out = fc;
+    return count;
 }
 
 /* ---- CARD / BKGD body layout ----
@@ -198,10 +263,20 @@ static Card *parse_card(const FileCtx *ctx, const BlockEntry *e,
     if (bmap)
         card->bitmap = bmap_decompress(blkbody(ctx, bmap), bmap->size - 12, w, h);
 
+    uint32_t parts_bytes = 0;
     if (part_count && body_size > CARD_OFF_PARTS) {
         card->part_count = part_count;
         card->parts = parse_parts(body + CARD_OFF_PARTS,
-                                   body_size - CARD_OFF_PARTS, part_count);
+                                   body_size - CARD_OFF_PARTS, part_count,
+                                   &parts_bytes);
+    }
+
+    /* content section (field text) follows card-layer part records */
+    uint32_t content_off = CARD_OFF_PARTS + parts_bytes;
+    if (content_off + 6 <= body_size) {
+        card->content_count = parse_card_content(body + content_off,
+                                                  body_size - content_off,
+                                                  &card->content);
     }
 
     card->script = extract_script(body, body_size, CARD_OFF_PARTS,
@@ -239,7 +314,7 @@ static Background *parse_bkgd(const FileCtx *ctx, const BlockEntry *e,
             parts_off += 2;
         bg->part_count = part_count;
         bg->parts = parse_parts(body + parts_off,
-                                 body_size - parts_off, part_count);
+                                 body_size - parts_off, part_count, NULL);
     }
 
     bg->script = extract_script(body, body_size, BKGD_OFF_PARTS,
@@ -340,6 +415,13 @@ fail:
     return NULL;
 }
 
+const char *card_field_text(const Card *c, uint16_t part_id) {
+    for (uint16_t i = 0; i < c->content_count; i++)
+        if (c->content[i].part_id == part_id)
+            return c->content[i].text;
+    return NULL;
+}
+
 Background *stack_find_bkgd(const Stack *s, uint32_t id) {
     for (uint32_t i = 0; i < s->bkgd_count; i++)
         if (s->bkgds[i].id == id) return &s->bkgds[i];
@@ -355,12 +437,13 @@ void stack_free(Stack *s) {
             free(c->parts[j].script);
         }
         free(c->parts);
+        if (c->content) {
+            for (uint16_t j = 0; j < c->content_count; j++)
+                free(c->content[j].text);
+            free(c->content);
+        }
         free(c->bitmap);
         free(c->script);
-        if (c->field_text) {
-            for (uint16_t j = 0; j < c->part_count; j++) free(c->field_text[j]);
-            free(c->field_text);
-        }
     }
     free(s->cards);
     for (uint32_t i = 0; i < s->bkgd_count; i++) {
@@ -480,10 +563,11 @@ void stack_dump(const Stack *s, FILE *out) {
         for (uint16_t j = 0; j < bg->part_count; j++) {
             const Part *p = &bg->parts[j];
             fprintf(out, "    part[%u] id=%u type=%u vis=%u "
-                    "rect=(%d,%d,%d,%d) style=%u name=%s\n",
+                    "rect=(%d,%d,%d,%d) style=%u font=%u size=%u name=%s\n",
                     j, p->id, p->type, p->visible,
                     p->rect.top, p->rect.left, p->rect.bottom, p->rect.right,
-                    p->style, p->name ? p->name : "(none)");
+                    p->style, p->font_id, p->text_size,
+                    p->name ? p->name : "(none)");
         }
         if (bg->script)
             fprintf(out, "    script[%zu]: %.120s%s\n",
@@ -493,15 +577,23 @@ void stack_dump(const Stack *s, FILE *out) {
 
     for (uint32_t i = 0; i < s->card_count; i++) {
         const Card *c = &s->cards[i];
-        fprintf(out, "\n  CARD[%u] id=%u  bkgd=%u  parts=%u  bitmap=%s\n",
-                i, c->id, c->bkgd_id, c->part_count, c->bitmap ? "yes" : "no");
+        fprintf(out, "\n  CARD[%u] id=%u  bkgd=%u  parts=%u  content=%u  bitmap=%s\n",
+                i, c->id, c->bkgd_id, c->part_count, c->content_count,
+                c->bitmap ? "yes" : "no");
         for (uint16_t j = 0; j < c->part_count; j++) {
             const Part *p = &c->parts[j];
             fprintf(out, "    part[%u] id=%u type=%u vis=%u "
-                    "rect=(%d,%d,%d,%d) style=%u name=%s\n",
+                    "rect=(%d,%d,%d,%d) style=%u font=%u size=%u name=%s\n",
                     j, p->id, p->type, p->visible,
                     p->rect.top, p->rect.left, p->rect.bottom, p->rect.right,
-                    p->style, p->name ? p->name : "(none)");
+                    p->style, p->font_id, p->text_size,
+                    p->name ? p->name : "(none)");
+        }
+        for (uint16_t j = 0; j < c->content_count; j++) {
+            const FieldContent *fc = &c->content[j];
+            const char *t = fc->text ? fc->text : "(none)";
+            fprintf(out, "    content[%u] part_id=%u: %.60s%s\n",
+                    j, fc->part_id, t, strlen(t) > 60 ? "..." : "");
         }
         if (c->script)
             fprintf(out, "    script[%zu]: %.120s%s\n",

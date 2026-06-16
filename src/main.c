@@ -48,6 +48,10 @@ int main(int argc, char *argv[]) {
     Renderer *r = renderer_create(s->card_width, s->card_height);
     if (!r) { stack_free(s); return 1; }
 
+    MenuBar menubar;
+    if (menubar_load(&menubar, "menus.json") != 0)
+        fprintf(stderr, "warning: menus.json not found, menu bar will be empty\n");
+
     uint32_t cur = 0;
     update_title(r, s, cur);
 
@@ -87,8 +91,16 @@ int main(int argc, char *argv[]) {
 
         int ww, wh;
         SDL_GetWindowSize(r->window, &ww, &wh);
-        if (menu_draw(r->nk, ww))
-            running = 0;
+        switch (menu_draw(&menubar, r->nk, ww)) {
+        case MENU_ACTION_QUIT:    running = 0; break;
+        case MENU_ACTION_GO_PREV:
+            if (cur > 0) { cur--; update_title(r, s, cur); } break;
+        case MENU_ACTION_GO_NEXT:
+            if (cur + 1 < s->card_count) { cur++; update_title(r, s, cur); } break;
+        case MENU_ACTION_GO_HOME:
+            cur = 0; update_title(r, s, cur); break;
+        default: break;
+        }
 
         renderer_draw_card(r, s, cur);
         nk_sdl_render(NK_ANTI_ALIASING_ON);
