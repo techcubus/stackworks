@@ -9,7 +9,7 @@
 
 static void update_title(Renderer *r, const Stack *s, uint32_t idx) {
     char buf[64];
-    snprintf(buf, sizeof buf, "cardviewer — card %u/%u", idx + 1, s->card_count);
+    snprintf(buf, sizeof buf, "StackWorks II Pro — card %u/%u", idx + 1, s->card_count);
     SDL_SetWindowTitle(r->window, buf);
 }
 

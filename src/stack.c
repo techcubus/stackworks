@@ -370,7 +370,7 @@ Stack *stack_load(const char *path) {
 
     /* parse stack metadata */
     const BlockEntry *stak = ctx_find(&ctx, BT_STAK, -1);
-    if (!stak) { fprintf(stderr, "cardviewer: no STAK block in %s\n", path); goto fail; }
+    if (!stak) { fprintf(stderr, "stackworks: no STAK block in %s\n", path); goto fail; }
     const uint8_t *sb = blkbody(&ctx, stak);
     uint32_t stak_body_size = stak->size - 12;
     if (stak_body_size > STAK_OFF_CARD_WIDTH + 2) {
@@ -400,7 +400,7 @@ Stack *stack_load(const char *path) {
     /* sanity check: STAK's declared card count vs. what we found by scanning */
     uint32_t expected_cards = r32(sb + STAK_OFF_TOTAL_CARDS);
     if (expected_cards && s->card_count != expected_cards)
-        fprintf(stderr, "cardviewer: STAK says %u cards, found %u\n",
+        fprintf(stderr, "stackworks: STAK says %u cards, found %u\n",
                 expected_cards, s->card_count);
 
     free(ctx.blocks);

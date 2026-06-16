@@ -3,7 +3,7 @@
     {
       "title": "🍌 Banana",
       "items": [
-        { "title": "About cardviewer", "action": "about" },
+        { "title": "About StackWorks II Pro", "action": "about" },
         { "separator": true },
         { "title": "Quit",             "action": "quit"  }
       ]

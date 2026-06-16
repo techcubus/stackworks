@@ -1,4 +1,4 @@
-cardviewer
+stackworks
 src/*.o
 src/*.d
 src/ui/*.o

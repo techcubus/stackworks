@@ -17,7 +17,7 @@ Renderer *renderer_create(uint16_t width, uint16_t height) {
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         free(r); return NULL;
     }
-    r->window = SDL_CreateWindow("cardviewer",
+    r->window = SDL_CreateWindow("StackWorks II Pro",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         width * 2, height * 2 + MENU_BAR_H,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
@@ -61,7 +61,7 @@ Renderer *renderer_create(uint16_t width, uint16_t height) {
             if (fp) { fclose(fp); snprintf(r->font_path, sizeof r->font_path, "%s", font_paths[i]); }
         }
         if (!r->font_path[0])
-            fprintf(stderr, "cardviewer: no font found, field text will not render\n");
+            fprintf(stderr, "stackworks: no font found, field text will not render\n");
     }
 
     return r;

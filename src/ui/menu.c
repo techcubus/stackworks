@@ -161,8 +161,8 @@ MenuAction menu_draw(MenuBar *mb, struct nk_context *nk, int window_width) {
 
     if (triggered == MENU_ACTION_ABOUT)
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION,
-            "cardviewer",
-            "HyperCard stack viewer\nA work in progress.\n\n\xF0\x9F\x8D\x8C",
+            "StackWorks II Pro",
+            "StackWorks II Pro\nHyperCard stack viewer\nA work in progress.\n\n\xF0\x9F\x8D\x8C",
             NULL);
 
     return triggered;

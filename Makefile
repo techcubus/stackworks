@@ -11,7 +11,7 @@ SRCS = src/main.c src/stack.c src/woba.c \
        src/ui/render.c src/ui/card_view.c src/ui/menu.c
 OBJS = $(SRCS:.c=.o)
 DEPS = $(OBJS:.o=.d)
-TARGET = cardviewer
+TARGET = stackworks
 
 $(TARGET): $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
