@@ -16,12 +16,15 @@ TARGET = stackworks
 $(TARGET): $(OBJS)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
+tools/rsrcextract: tools/rsrcextract.c
+	$(CC) -Wall -Wextra -std=c11 -g -o $@ $<
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 -include $(DEPS)
 
 clean:
-	rm -f $(OBJS) $(DEPS) $(TARGET)
+	rm -f $(OBJS) $(DEPS) $(TARGET) tools/rsrcextract
 
-.PHONY: clean
+.PHONY: clean tools/rsrcextract
