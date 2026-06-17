@@ -19,12 +19,15 @@ $(TARGET): $(OBJS)
 tools/rsrcextract: tools/rsrcextract.c
 	$(CC) -Wall -Wextra -std=c11 -g -o $@ $<
 
+tools/pict2ppm: tools/pict2ppm.c
+	$(CC) -Wall -Wextra -std=c11 -g -o $@ $<
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 -include $(DEPS)
 
 clean:
-	rm -f $(OBJS) $(DEPS) $(TARGET) tools/rsrcextract
+	rm -f $(OBJS) $(DEPS) $(TARGET) tools/rsrcextract tools/pict2ppm
 
 .PHONY: clean tools/rsrcextract
