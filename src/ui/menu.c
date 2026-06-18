@@ -47,6 +47,8 @@ static MenuAction parse_action(const char *s) {
     if (strcmp(s, "zoom_1x") == 0) return MENU_ACTION_ZOOM_1X;
     if (strcmp(s, "zoom_2x") == 0) return MENU_ACTION_ZOOM_2X;
     if (strcmp(s, "zoom_3x") == 0) return MENU_ACTION_ZOOM_3X;
+    if (strcmp(s, "zoom_4x") == 0) return MENU_ACTION_ZOOM_4X;
+    if (strcmp(s, "zoom_5x") == 0) return MENU_ACTION_ZOOM_5X;
     return MENU_ACTION_NONE;
 }
 

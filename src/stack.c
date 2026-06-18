@@ -440,10 +440,14 @@ static Background *parse_bkgd(const FileCtx *ctx, const BlockEntry *e,
  * that maps to body[0x01AC/0x01AE], but empirical dumps place the values
  * 2 bytes later at body[0x01AE/0x01B0] — consistent across both test stacks.
  */
-#define STAK_OFF_BKGD_COUNT   0x18  /* uint32: number of BKGD blocks */
-#define STAK_OFF_TOTAL_CARDS  0x20  /* uint32: number of CARD blocks */
-#define STAK_OFF_CARD_HEIGHT  0x1AC /* uint16: card height in pixels  */
-#define STAK_OFF_CARD_WIDTH   0x1AE /* uint16: card width in pixels   */
+#define STAK_OFF_BKGD_COUNT   0x18   /* uint32: number of BKGD blocks */
+#define STAK_OFF_TOTAL_CARDS  0x20   /* uint32: number of CARD blocks */
+#define STAK_OFF_CARD_HEIGHT  0x1AC  /* uint16: card height in pixels  */
+#define STAK_OFF_CARD_WIDTH   0x1AE  /* uint16: card width in pixels   */
+/* Pascal string containing the HFS path of the stack (e.g. "HD:Foo:Bar").
+ * Take the last colon-delimited component as the stack name.
+ * Only Home.hc and named stacks have this; unnamed stacks leave it zero. */
+#define STAK_OFF_NAME         0x234  /* uint8 length + chars */
 
 /* ---- top-level loader ---- */
 
@@ -487,6 +491,33 @@ Stack *stack_load(const char *path) {
     }
     if (s->card_width == 0 || s->card_height == 0) {
         s->card_width = 512; s->card_height = 342; /* classic Mac screen */
+    }
+
+    /* Extract stack name from STAK body[0x234]: Pascal string with HFS path.
+     * If it contains colons (Mac HFS separator), take the last component.
+     * Fall back to the filename basename without its extension. */
+    if (stak_body_size > STAK_OFF_NAME + 1) {
+        uint8_t plen = sb[STAK_OFF_NAME];
+        if (plen > 0 && plen <= 127 &&
+            (size_t)(STAK_OFF_NAME + 1 + plen) <= stak_body_size) {
+            char hfspath[128];
+            size_t n = plen < 127 ? plen : 127;
+            memcpy(hfspath, sb + STAK_OFF_NAME + 1, n);
+            hfspath[n] = '\0';
+            /* last colon-delimited component is the stack name */
+            const char *last = strrchr(hfspath, ':');
+            const char *sname = last ? last + 1 : hfspath;
+            snprintf(s->name, sizeof s->name, "%.*s",
+                     (int)(sizeof s->name - 1), sname);
+        }
+    }
+    if (s->name[0] == '\0') {
+        /* filename fallback: strip directory and .hc extension */
+        const char *base = strrchr(path, '/');
+        base = base ? base + 1 : path;
+        snprintf(s->name, sizeof s->name, "%s", base);
+        char *dot = strrchr(s->name, '.');
+        if (dot) *dot = '\0';
     }
 
     /* allocate worst-case arrays (at most one per block) */

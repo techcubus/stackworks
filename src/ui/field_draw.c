@@ -21,7 +21,7 @@ static void draw_one_field(Renderer *r, const Part *p, const char *text,
     TTF_SetFontStyle(font, ttf_style);
 
     int fx = p->rect.left  * sx;
-    int fy = p->rect.top   * sy + MENU_BAR_H;
+    int fy = p->rect.top   * sy + MENU_BAR_H(sx);
     int fw = (p->rect.right  - p->rect.left) * sx;
     int fh = (p->rect.bottom - p->rect.top)  * sy;
     if (fw <= 0 || fh <= 0) return;
@@ -99,9 +99,10 @@ static void draw_one_field(Renderer *r, const Part *p, const char *text,
 void field_draw_text(Renderer *r, const Card *card, const Background *bg) {
     int ww, wh;
     SDL_GetWindowSize(r->window, &ww, &wh);
-    int sx = ww / r->width;
-    int sy = (wh - MENU_BAR_H) / r->height;
+    int sx = (r->width  > 0) ? ww / r->width  : 1;
     if (sx < 1) sx = 1;
+    int menu_bar_h = MENU_BAR_H(sx);
+    int sy = (r->height > 0) ? (wh - menu_bar_h) / r->height : 1;
     if (sy < 1) sy = 1;
 
     /* background-layer fields: card content overrides bg content per part */

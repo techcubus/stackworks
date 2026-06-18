@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <SDL2/SDL.h>
 #include "nuklear.h"
 #include "nuklear_sdl_renderer.h"
@@ -7,9 +8,11 @@
 #include "ui/card_view.h"
 #include "ui/menu.h"
 
-static void update_title(Renderer *r, const Stack *s, uint32_t idx) {
-    char buf[64];
-    snprintf(buf, sizeof buf, "StackWorks II Pro — card %u/%u", idx + 1, s->card_count);
+static void update_title(Renderer *r, const Stack *s, uint32_t idx,
+                         const char *filename) {
+    char buf[256];
+    snprintf(buf, sizeof buf, "StackWorks II Pro - %s, card %u of %u (%s)",
+             s->name, idx + 1, s->card_count, filename);
     SDL_SetWindowTitle(r->window, buf);
 }
 
@@ -30,6 +33,10 @@ int main(int argc, char *argv[]) {
 
     Stack *s = stack_load(path);
     if (!s) return 1;
+
+    /* basename only for the window title */
+    const char *filename = strrchr(path, '/');
+    filename = filename ? filename + 1 : path;
 
     printf("loaded: %u cards, %u backgrounds, %ux%u\n",
            s->card_count, s->bkgd_count, s->card_width, s->card_height);
@@ -53,7 +60,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "warning: menus.json not found, menu bar will be empty\n");
 
     uint32_t cur = 0;
-    update_title(r, s, cur);
+    update_title(r, s, cur, filename);
 
     int running = 1;
     while (running) {
@@ -82,7 +89,7 @@ int main(int argc, char *argv[]) {
                     cur = s->card_count - 1; break;
                 default: break;
                 }
-                update_title(r, s, cur);
+                update_title(r, s, cur, filename);
                 break;
             default: break;
             }
@@ -91,20 +98,31 @@ int main(int argc, char *argv[]) {
 
         int ww, wh;
         SDL_GetWindowSize(r->window, &ww, &wh);
-        switch (menu_draw(&menubar, r->nk, ww, MENU_BAR_H)) {
+        int zoom = (s->card_width > 0) ? ww / s->card_width : 1;
+        if (zoom < 1) zoom = 1;
+        if (zoom > 5) zoom = 5;
+        int menu_bar_h = MENU_BAR_H(zoom);
+
+        /* Switch to the pre-baked Nuklear font that matches the current zoom. */
+        if (r->nk_fonts[zoom - 1])
+            nk_style_set_font(r->nk, &r->nk_fonts[zoom - 1]->handle);
+
+        switch (menu_draw(&menubar, r->nk, ww, menu_bar_h)) {
         case MENU_ACTION_QUIT:    running = 0; break;
         case MENU_ACTION_GO_PREV:
-            if (cur > 0) { cur--; update_title(r, s, cur); } break;
+            if (cur > 0) { cur--; update_title(r, s, cur, filename); } break;
         case MENU_ACTION_GO_NEXT:
-            if (cur + 1 < s->card_count) { cur++; update_title(r, s, cur); } break;
+            if (cur + 1 < s->card_count) { cur++; update_title(r, s, cur, filename); } break;
         case MENU_ACTION_GO_HOME:
-            cur = 0; update_title(r, s, cur); break;
-        case MENU_ACTION_ZOOM_1X:
-            SDL_SetWindowSize(r->window, s->card_width,     s->card_height     + MENU_BAR_H); break;
-        case MENU_ACTION_ZOOM_2X:
-            SDL_SetWindowSize(r->window, s->card_width * 2, s->card_height * 2 + MENU_BAR_H); break;
-        case MENU_ACTION_ZOOM_3X:
-            SDL_SetWindowSize(r->window, s->card_width * 3, s->card_height * 3 + MENU_BAR_H); break;
+            cur = 0; update_title(r, s, cur, filename); break;
+#define SET_ZOOM(n) SDL_SetWindowSize(r->window, \
+            s->card_width * (n), s->card_height * (n) + MENU_BAR_H(n))
+        case MENU_ACTION_ZOOM_1X: SET_ZOOM(1); break;
+        case MENU_ACTION_ZOOM_2X: SET_ZOOM(2); break;
+        case MENU_ACTION_ZOOM_3X: SET_ZOOM(3); break;
+        case MENU_ACTION_ZOOM_4X: SET_ZOOM(4); break;
+        case MENU_ACTION_ZOOM_5X: SET_ZOOM(5); break;
+#undef SET_ZOOM
         default: break;
         }
 

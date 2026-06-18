@@ -14,6 +14,8 @@ typedef enum {
     MENU_ACTION_ZOOM_1X,
     MENU_ACTION_ZOOM_2X,
     MENU_ACTION_ZOOM_3X,
+    MENU_ACTION_ZOOM_4X,
+    MENU_ACTION_ZOOM_5X,
 } MenuAction;
 
 #define MENU_MAX       8

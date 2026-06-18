@@ -7,7 +7,9 @@
 
 struct nk_context;
 
-#define MENU_BAR_H 72
+/* Menu bar height for a given integer zoom factor.
+ * If zoom*20 > 40 (i.e. zoom >= 3) use zoom*10; otherwise floor at 40px. */
+#define MENU_BAR_H(zoom) ((zoom) * 10 > 40 ? (zoom) * 10 : 40)
 #define RENDERER_FONT_CACHE_MAX 16
 
 typedef struct {
@@ -25,6 +27,8 @@ typedef struct {
     char               font_path[256];
     FontCacheEntry     font_cache[RENDERER_FONT_CACHE_MAX];
     int                font_cache_count;
+    /* Pre-baked Nuklear fonts for zoom levels 1×–5×; index = zoom - 1. */
+    struct nk_font    *nk_fonts[5];
 } Renderer;
 
 Renderer *renderer_create(uint16_t width, uint16_t height);

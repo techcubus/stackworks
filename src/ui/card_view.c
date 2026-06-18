@@ -80,7 +80,10 @@ void renderer_draw_card(Renderer *r, const Stack *s, uint32_t card_idx) {
 
     int ww, wh;
     SDL_GetWindowSize(r->window, &ww, &wh);
-    SDL_Rect dst = { 0, MENU_BAR_H, ww, wh - MENU_BAR_H };
+    int zoom = (r->width > 0) ? ww / r->width : 1;
+    if (zoom < 1) zoom = 1;
+    int menu_bar_h = MENU_BAR_H(zoom);
+    SDL_Rect dst = { 0, menu_bar_h, ww, wh - menu_bar_h };
     SDL_RenderClear(r->renderer);
     SDL_RenderCopy(r->renderer, r->tex, NULL, &dst);
 

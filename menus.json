@@ -27,7 +27,9 @@
       "items": [
         { "title": "Zoom 1×",  "action": "zoom_1x" },
         { "title": "Zoom 2×",  "action": "zoom_2x" },
-        { "title": "Zoom 3×",  "action": "zoom_3x" }
+        { "title": "Zoom 3×",  "action": "zoom_3x" },
+        { "title": "Zoom 4×",  "action": "zoom_4x" },
+        { "title": "Zoom 5×",  "action": "zoom_5x" }
       ]
     }
   ]

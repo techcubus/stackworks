@@ -19,7 +19,7 @@ Renderer *renderer_create(uint16_t width, uint16_t height) {
     }
     r->window = SDL_CreateWindow("StackWorks II Pro",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        width * 2, height * 2 + MENU_BAR_H,
+        width * 2, height * 2 + MENU_BAR_H(2),
         SDL_WINDOW_SHOWN);
     if (!r->window) {
         fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
@@ -58,13 +58,18 @@ Renderer *renderer_create(uint16_t width, uint16_t height) {
     r->nk = nk_sdl_init(r->window, r->renderer);
     struct nk_font_atlas *atlas;
     nk_sdl_font_stash_begin(&atlas);
-    struct nk_font *nk_font = NULL;
-    if (r->font_path[0])
-        nk_font = nk_font_atlas_add_from_file(atlas, r->font_path, MENU_BAR_H * 2 / 3, 0);
+    /* Bake one font per zoom level (1×–5×) so we can switch cleanly each frame.
+     * Font height = bar_h * 2/3 keeps text nicely centred in the menu bar. */
+    for (int z = 1; z <= 5; z++) {
+        int fs = MENU_BAR_H(z) * 2 / 3;
+        r->nk_fonts[z - 1] = r->font_path[0]
+            ? nk_font_atlas_add_from_file(atlas, r->font_path, (float)fs, 0)
+            : NULL;
+    }
     nk_sdl_font_stash_end();
-    /* Use the loaded TTF at 52px for all Nuklear widgets (menu bar). */
-    if (nk_font)
-        nk_style_set_font(r->nk, &nk_font->handle);
+    /* Default window opens at 2×, so activate the 2× font. */
+    if (r->nk_fonts[1])
+        nk_style_set_font(r->nk, &r->nk_fonts[1]->handle);
 
     if (TTF_Init() < 0) {
         fprintf(stderr, "TTF_Init: %s\n", TTF_GetError());

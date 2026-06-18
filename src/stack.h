@@ -85,6 +85,7 @@ typedef struct {
     Card       *cards;
     uint32_t    bkgd_count;
     Background *bkgds;
+    char        name[64];   /* stack name; derived from STAK or filename */
     /* raw file bytes — kept for stack_dump(), freed by stack_free() */
     uint8_t    *raw_data;
     size_t      raw_size;
