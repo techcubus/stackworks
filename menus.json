@@ -1,11 +1,16 @@
 {
   "menus": [
     {
-      "title": "🍌 Banana",
+      "title": "🍌 BaNaNa",
       "items": [
         { "title": "About StackWorks II Pro", "action": "about" },
-        { "separator": true },
-        { "title": "Quit",             "action": "quit"  }
+      ]
+    },
+    {
+      "title": "File",
+      "items": [
+        { "title": "Open Stack...", "action": "open_stack" },
+        { "title": "Quit StackWorks", "action": "quit" }
       ]
     },
     {
@@ -15,6 +20,14 @@
         { "title": "Next",     "action": "go_next" },
         { "separator": true },
         { "title": "Home",     "action": "go_home" }
+      ]
+    },
+    {
+      "title": "View",
+      "items": [
+        { "title": "Zoom 1×",  "action": "zoom_1x" },
+        { "title": "Zoom 2×",  "action": "zoom_2x" },
+        { "title": "Zoom 3×",  "action": "zoom_3x" }
       ]
     }
   ]

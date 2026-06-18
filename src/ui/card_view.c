@@ -1,4 +1,5 @@
 #include "card_view.h"
+#include "field_draw.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -50,87 +51,6 @@ static void draw_parts(uint32_t *pixels, int pitch_px,
     }
 }
 
-/* Render field text directly onto the SDL renderer at 2× card coordinates.
- * Called after SDL_RenderCopy of the card bitmap texture. */
-static void draw_field_text(Renderer *r, const Card *card, const Background *bg) {
-    if (!bg) return;
-
-    int ww, wh;
-    SDL_GetWindowSize(r->window, &ww, &wh);
-    /* scale factors: card pixels → screen pixels */
-    int sx = ww / r->width;
-    int sy = (wh - MENU_BAR_H) / r->height;
-    if (sx < 1) sx = 1;
-    if (sy < 1) sy = 1;
-
-    SDL_Color black = { 0, 0, 0, 255 };
-
-    for (uint16_t i = 0; i < bg->part_count; i++) {
-        const Part *p = &bg->parts[i];
-        if (p->type != PART_FIELD || !p->visible) continue;
-
-        const char *text = card_field_text(card, p->id);
-        if (!text || !*text) continue;
-
-        /* choose font: use field's point size scaled to screen; fall back to 12pt */
-        int pt_size = (p->text_size > 0 ? (int)p->text_size : 12) * sx;
-        TTF_Font *font = renderer_get_font(r, pt_size);
-        if (!font) continue;
-
-        /* field bounds in screen coordinates */
-        int fx = p->rect.left  * sx;
-        int fy = p->rect.top   * sy + MENU_BAR_H;
-        int fw = (p->rect.right  - p->rect.left) * sx;
-        int fh = (p->rect.bottom - p->rect.top)  * sy;
-        if (fw <= 0 || fh <= 0) continue;
-
-        /* clear any clip left by the previous field before drawing background */
-        SDL_RenderSetClipRect(r->renderer, NULL);
-
-        /* draw field background according to style */
-        SDL_Rect field_rect = { fx, fy, fw, fh };
-        if (p->style == FLD_STYLE_SHADOW) {
-            int sh = 3 * sx;
-            SDL_Rect shad = { fx + sh, fy + sh, fw, fh };
-            SDL_SetRenderDrawColor(r->renderer, 0, 0, 0, 255);
-            SDL_RenderFillRect(r->renderer, &shad);
-        }
-        SDL_SetRenderDrawColor(r->renderer, 255, 255, 255, 255);
-        SDL_RenderFillRect(r->renderer, &field_rect);
-        SDL_SetRenderDrawColor(r->renderer, 0, 0, 0, 255);
-        SDL_RenderDrawRect(r->renderer, &field_rect);
-
-        /* inset the clip by 2px for text padding */
-        SDL_Rect clip = { fx + 2, fy + 2, fw - 4, fh - 4 };
-        SDL_RenderSetClipRect(r->renderer, &clip);
-        int tx = fx + 2;
-        int ty_start = fy + 2;
-
-        /* convert \r line separators to \n for SDL_ttf */
-        char *copy = strdup(text);
-        if (!copy) continue;
-        for (char *q = copy; *q; q++)
-            if ((unsigned char)*q == 0x0D) *q = '\n';
-
-        if (*copy) {
-            SDL_Surface *surf = TTF_RenderText_Blended_Wrapped(
-                font, copy, black, (Uint32)(fw - 4));
-            if (surf) {
-                SDL_Texture *tex = SDL_CreateTextureFromSurface(r->renderer, surf);
-                if (tex) {
-                    SDL_Rect dst = { tx, ty_start, surf->w, surf->h };
-                    SDL_RenderCopy(r->renderer, tex, NULL, &dst);
-                    SDL_DestroyTexture(tex);
-                }
-                SDL_FreeSurface(surf);
-            }
-        }
-        free(copy);
-    }
-
-    SDL_RenderSetClipRect(r->renderer, NULL);
-    SDL_SetRenderDrawColor(r->renderer, 0, 0, 0, 255);
-}
 
 void renderer_draw_card(Renderer *r, const Stack *s, uint32_t card_idx) {
     if (card_idx >= s->card_count) return;
@@ -164,6 +84,6 @@ void renderer_draw_card(Renderer *r, const Stack *s, uint32_t card_idx) {
     SDL_RenderClear(r->renderer);
     SDL_RenderCopy(r->renderer, r->tex, NULL, &dst);
 
-    draw_field_text(r, card, bg);
+    field_draw_text(r, card, bg);
     /* caller renders Nuklear then calls SDL_RenderPresent */
 }

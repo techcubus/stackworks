@@ -20,7 +20,7 @@ Renderer *renderer_create(uint16_t width, uint16_t height) {
     r->window = SDL_CreateWindow("StackWorks II Pro",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         width * 2, height * 2 + MENU_BAR_H,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+        SDL_WINDOW_SHOWN);
     if (!r->window) {
         fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
         SDL_Quit(); free(r); return NULL;
@@ -41,27 +41,35 @@ Renderer *renderer_create(uint16_t width, uint16_t height) {
         SDL_DestroyWindow(r->window); SDL_Quit(); free(r); return NULL;
     }
 
+    /* Find a system font before entering the Nuklear atlas stash so we can
+     * load it into the atlas at the desired size. */
+    static const char *font_paths[] = {
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+        NULL
+    };
+    for (int i = 0; font_paths[i] && !r->font_path[0]; i++) {
+        FILE *fp = fopen(font_paths[i], "rb");
+        if (fp) { fclose(fp); snprintf(r->font_path, sizeof r->font_path, "%s", font_paths[i]); }
+    }
+
     r->nk = nk_sdl_init(r->window, r->renderer);
     struct nk_font_atlas *atlas;
     nk_sdl_font_stash_begin(&atlas);
+    struct nk_font *nk_font = NULL;
+    if (r->font_path[0])
+        nk_font = nk_font_atlas_add_from_file(atlas, r->font_path, MENU_BAR_H * 2 / 3, 0);
     nk_sdl_font_stash_end();
+    /* Use the loaded TTF at 52px for all Nuklear widgets (menu bar). */
+    if (nk_font)
+        nk_style_set_font(r->nk, &nk_font->handle);
 
     if (TTF_Init() < 0) {
         fprintf(stderr, "TTF_Init: %s\n", TTF_GetError());
-    } else {
-        static const char *font_paths[] = {
-            "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-            NULL
-        };
-        for (int i = 0; font_paths[i] && !r->font_path[0]; i++) {
-            FILE *fp = fopen(font_paths[i], "rb");
-            if (fp) { fclose(fp); snprintf(r->font_path, sizeof r->font_path, "%s", font_paths[i]); }
-        }
-        if (!r->font_path[0])
-            fprintf(stderr, "stackworks: no font found, field text will not render\n");
+    } else if (!r->font_path[0]) {
+        fprintf(stderr, "stackworks: no font found, field text will not render\n");
     }
 
     return r;

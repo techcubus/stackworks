@@ -27,10 +27,12 @@
 #define BTN_STYLE_SHADOW       3
 
 /* Field style — byte at part record +0x0F.
- * Confirmed: rectangle=0 (Name&Address, Phone), shadow=4 (Card Number, Notes).
- * Value 1 seen on Stack Title field; meaning not yet confirmed. */
-#define FLD_STYLE_RECTANGLE    0
-#define FLD_STYLE_SHADOW       4
+ * Confirmed from field_day.hc hex + Mac screenshot comparison. */
+#define FLD_STYLE_TRANSPARENT  0  /* no fill, no border — text over bitmap */
+#define FLD_STYLE_OPAQUE       1  /* white fill, no border */
+#define FLD_STYLE_RECTANGLE    2  /* white fill + plain border */
+#define FLD_STYLE_SHADOW       4  /* white fill + border + drop shadow */
+#define FLD_STYLE_SCROLLING    7  /* white fill + border + scroll bar */
 
 typedef struct {
     int16_t top, left, bottom, right;
@@ -51,17 +53,19 @@ typedef struct {
 } Part;
 
 typedef struct {
-    uint32_t  id;
-    uint16_t  part_count;
-    Part     *parts;
-    uint8_t  *bitmap;  /* decompressed 1-bit rows, NULL if none */
-    char     *script;
-} Background;
-
-typedef struct {
     uint16_t  part_id;  /* background field's part id */
     char     *text;     /* Mac Roman, \r-separated, null-term; NULL = empty */
 } FieldContent;
+
+typedef struct {
+    uint32_t      id;
+    uint16_t      part_count;
+    Part         *parts;
+    uint16_t      content_count;
+    FieldContent *content;   /* bg-level field text, same on every card */
+    uint8_t      *bitmap;    /* decompressed 1-bit rows, NULL if none */
+    char         *script;
+} Background;
 
 typedef struct {
     uint32_t      id;
@@ -90,6 +94,7 @@ Stack      *stack_load(const char *path);
 void        stack_free(Stack *s);
 Background *stack_find_bkgd(const Stack *s, uint32_t id);
 const char *card_field_text(const Card *c, uint16_t part_id);
+const char *bkgd_field_text(const Background *bg, uint16_t part_id);
 void        stack_dump(const Stack *s, FILE *out);
 
 #endif /* STACK_H */

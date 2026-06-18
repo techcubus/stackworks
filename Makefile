@@ -8,7 +8,7 @@ CFLAGS = -Wall -Wextra -std=c11 -g -D_POSIX_C_SOURCE=200809L \
 LDFLAGS = $(shell sdl2-config --libs) $(shell pkg-config --libs SDL2_ttf) -lm
 
 SRCS = src/main.c src/stack.c src/woba.c \
-       src/ui/render.c src/ui/card_view.c src/ui/menu.c
+       src/ui/render.c src/ui/card_view.c src/ui/field_draw.c src/ui/menu.c
 OBJS = $(SRCS:.c=.o)
 DEPS = $(OBJS:.o=.d)
 TARGET = stackworks

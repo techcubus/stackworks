@@ -91,7 +91,7 @@ int main(int argc, char *argv[]) {
 
         int ww, wh;
         SDL_GetWindowSize(r->window, &ww, &wh);
-        switch (menu_draw(&menubar, r->nk, ww)) {
+        switch (menu_draw(&menubar, r->nk, ww, MENU_BAR_H)) {
         case MENU_ACTION_QUIT:    running = 0; break;
         case MENU_ACTION_GO_PREV:
             if (cur > 0) { cur--; update_title(r, s, cur); } break;
@@ -99,6 +99,12 @@ int main(int argc, char *argv[]) {
             if (cur + 1 < s->card_count) { cur++; update_title(r, s, cur); } break;
         case MENU_ACTION_GO_HOME:
             cur = 0; update_title(r, s, cur); break;
+        case MENU_ACTION_ZOOM_1X:
+            SDL_SetWindowSize(r->window, s->card_width,     s->card_height     + MENU_BAR_H); break;
+        case MENU_ACTION_ZOOM_2X:
+            SDL_SetWindowSize(r->window, s->card_width * 2, s->card_height * 2 + MENU_BAR_H); break;
+        case MENU_ACTION_ZOOM_3X:
+            SDL_SetWindowSize(r->window, s->card_width * 3, s->card_height * 3 + MENU_BAR_H); break;
         default: break;
         }
 

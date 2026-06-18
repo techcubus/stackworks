@@ -7,7 +7,7 @@
 
 struct nk_context;
 
-#define MENU_BAR_H 50
+#define MENU_BAR_H 72
 #define RENDERER_FONT_CACHE_MAX 16
 
 typedef struct {

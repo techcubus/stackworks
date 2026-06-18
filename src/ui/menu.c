@@ -44,6 +44,9 @@ static MenuAction parse_action(const char *s) {
     if (strcmp(s, "go_prev") == 0) return MENU_ACTION_GO_PREV;
     if (strcmp(s, "go_next") == 0) return MENU_ACTION_GO_NEXT;
     if (strcmp(s, "go_home") == 0) return MENU_ACTION_GO_HOME;
+    if (strcmp(s, "zoom_1x") == 0) return MENU_ACTION_ZOOM_1X;
+    if (strcmp(s, "zoom_2x") == 0) return MENU_ACTION_ZOOM_2X;
+    if (strcmp(s, "zoom_3x") == 0) return MENU_ACTION_ZOOM_3X;
     return MENU_ACTION_NONE;
 }
 
@@ -127,26 +130,55 @@ int menubar_load(MenuBar *mb, const char *path) {
 
 /* ---- Nuklear rendering ---- */
 
-MenuAction menu_draw(MenuBar *mb, struct nk_context *nk, int window_width) {
+MenuAction menu_draw(MenuBar *mb, struct nk_context *nk, int window_width, int bar_h) {
     MenuAction triggered = MENU_ACTION_NONE;
 
-    if (nk_begin(nk, "menubar", nk_rect(0, 0, (float)window_width, MENU_BAR_H),
+    int item_h = bar_h - 8;  /* row height for both the bar buttons and dropdown items */
+
+    /* nk->style.font.width() measures text pixels using the currently active font */
+    const struct nk_user_font *f = nk->style.font;
+
+    if (nk_begin(nk, "menubar", nk_rect(0, 0, (float)window_width, (float)bar_h),
                  NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
         nk_menubar_begin(nk);
-        nk_layout_row_begin(nk, NK_STATIC, MENU_BAR_H - 8, mb->menu_count);
+        nk_layout_row_begin(nk, NK_STATIC, (float)item_h, mb->menu_count);
 
         for (int m = 0; m < mb->menu_count; m++) {
             Menu *menu = &mb->menus[m];
-            nk_layout_row_push(nk, 80);
+
+            /* button width: measured title + horizontal padding */
+            float btn_w = f->width(f->userdata, f->height,
+                                   menu->title, (int)strlen(menu->title))
+                          + (float)bar_h;
+
+            /* popup width: widest item label + padding for margins */
+            float popup_w = 0;
+            for (int it = 0; it < menu->item_count; it++) {
+                if (menu->items[it].separator) continue;
+                float w = f->width(f->userdata, f->height,
+                                   menu->items[it].title,
+                                   (int)strlen(menu->items[it].title));
+                if (w > popup_w) popup_w = w;
+            }
+            popup_w += (float)bar_h;
+
+            /* popup height: items at item_h, separators at 6px */
+            int popup_h = 8;
+            for (int it = 0; it < menu->item_count; it++)
+                popup_h += menu->items[it].separator ? 6 : item_h;
+
+            nk_layout_row_push(nk, btn_w);
             if (nk_menu_begin_label(nk, menu->title, NK_TEXT_LEFT,
-                                    nk_vec2(160, 24 * menu->item_count + 8))) {
-                nk_layout_row_dynamic(nk, 24, 1);
+                                    nk_vec2(popup_w, (float)popup_h))) {
                 for (int it = 0; it < menu->item_count; it++) {
                     MenuItem *item = &menu->items[it];
                     if (item->separator) {
-                        nk_menu_item_label(nk, "---", NK_TEXT_CENTERED);
+                        /* nk_rule_horizontal draws a real horizontal rule line */
+                        nk_layout_row_dynamic(nk, 6, 1);
+                        nk_rule_horizontal(nk, nk_rgb(160, 160, 160), nk_false);
                         continue;
                     }
+                    nk_layout_row_dynamic(nk, (float)item_h, 1);
                     if (nk_menu_item_label(nk, item->title, NK_TEXT_LEFT))
                         triggered = item->action;
                 }

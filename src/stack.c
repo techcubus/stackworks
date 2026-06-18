@@ -72,7 +72,15 @@ static const uint8_t *blkbody(const FileCtx *ctx, const BlockEntry *e) {
  *   +0x0C  int16   rect.right
  *   +0x0E  uint8   style
  *   +0x0F  uint8   flags2
- *   +0x10  uint8[14] text properties (font, size, align, style)
+ *   +0x10  uint8[14] text properties:
+ *            +0x10 uint16 text_align (0=left, 1=center, 2=right)
+ *            +0x12 uint16 unknown flags (0xFFFF = inherit?)
+ *            +0x14 uint16 unknown flags2
+ *            +0x16 uint16 font_family_id (Mac font system ID)
+ *            +0x18 uint16 text_size (points)
+ *            +0x1A uint8  text_style (bold=0x01, italic=0x02, underline=0x04,
+ *                          outline=0x08, shadow=0x10, condense=0x20, extend=0x40)
+ *            +0x1B uint8  line_height
  *   +0x1E  char[]  name (null-terminated)
  *   then   char[]  script (null-terminated)
  */
@@ -104,12 +112,14 @@ static Part *parse_parts(const uint8_t *data, uint32_t avail, uint16_t count,
         else
             parts[i].style = p[0x0F];
 
-        /* font attributes — only present when record is large enough */
+        /* font attributes — only present when record is large enough.
+         * text_style is a single byte at +0x1A (not +0x14 which is unknown flags).
+         * bit 0=bold, 1=italic, 2=underline, 3=outline, 4=shadow, 5=condense, 6=extend */
         if (rec_size > 0x1A) {
             parts[i].text_align  = (uint8_t)(r16(p + 0x10) & 0xFF);
             parts[i].font_id     = r16(p + 0x16);
             parts[i].text_size   = r16(p + 0x18);
-            parts[i].text_style  = p[0x14];
+            parts[i].text_style  = p[0x1A];
         }
 
         if (rec_size > PART_HDR_MIN) {
@@ -125,55 +135,126 @@ static Part *parse_parts(const uint8_t *data, uint32_t avail, uint16_t count,
     return parts;
 }
 
+/* Extract text from a styled content entry.
+ * The run table precedes the actual text.  The run table format is opaque
+ * but consists of uint16 pairs, so any printable byte inside it is always
+ * followed immediately by 0x00.  Actual text has ≥ 2 consecutive printable
+ * bytes.  We scan for the first such pair; \r (0x0D) counts as "printable"
+ * because HyperCard uses it as a paragraph separator. */
+static char *extract_styled_text(const uint8_t *ep, uint16_t text_size) {
+    if (text_size < 2) return NULL;
+    /* The last byte is the overlap byte shared with the next entry. */
+    uint16_t limit = text_size - 1;
+
+    uint16_t text_start = 0;
+    int found = 0;
+    for (uint16_t i = 0; i + 1 < limit; i++) {
+        int c_ok = (ep[i]   >= 0x20 || ep[i]   == 0x0D);
+        int n_ok = (ep[i+1] >= 0x20 || ep[i+1] == 0x0D);
+        if (c_ok && n_ok) { text_start = i; found = 1; break; }
+    }
+    if (!found) return NULL;
+
+    size_t len = 0;
+    for (uint16_t i = text_start; i < limit; i++) {
+        if (ep[i] == 0x00) break;
+        len++;
+    }
+    if (!len) return NULL;
+    return strndup((const char *)(ep + text_start), len);
+}
+
 /* Parse the field content section that follows card-layer part records.
- * Layout: uint16 entry_count, uint16 unknown, uint16 total_size,
- *         then entries: uint16 part_id, uint16 text_size, uint8 style_flag,
- *                       char[text_size] text (Mac Roman, \r-separated, null-term).
- * style_flag 0x00 = plain; non-zero = styled text with embedded run table (skipped). */
-static uint16_t parse_card_content(const uint8_t *p, uint32_t avail,
-                                    FieldContent **out) {
+ * has_header=1: 6-byte header (uint16 entry_count, uint16 unknown,
+ *               uint16 total_size) precedes entries.
+ * has_header=0: entries start at byte 0; iterate until data exhausted.
+ * Entry layout: uint16 part_id, uint16 text_size, uint8 style_flag,
+ *               char[text_size] text (Mac Roman, \r-separated).
+ * style_flag 0x00 = plain (null-terminated); non-zero = styled (run table prefix).
+ * bytes_out (optional): set to the number of content-section bytes consumed,
+ * useful for locating what follows (e.g. the card script). */
+static uint16_t parse_content(const uint8_t *p, uint32_t avail,
+                               int has_header, FieldContent **out,
+                               uint32_t *bytes_out) {
     *out = NULL;
-    if (avail < 6) return 0;
+    if (bytes_out) *bytes_out = 0;
 
-    uint16_t entry_count = r16(p);
-    /* p[2-3] = unknown */
-    uint16_t total_size  = r16(p + 4);
+    const uint8_t *ep, *end;
+    uint16_t entry_count;
+    uint32_t fixed_bytes = 0;
 
-    if (entry_count == 0 || total_size == 0) return 0;
-    if (avail < (uint32_t)(6 + total_size)) return 0;
+    if (has_header) {
+        if (avail < 6) return 0;
+        entry_count          = r16(p);
+        uint16_t total_size  = r16(p + 4);
+        if (entry_count == 0 || total_size == 0) return 0;
+        if (avail < (uint32_t)(6 + total_size)) return 0;
+        ep          = p + 6;
+        end         = ep + total_size;
+        fixed_bytes = 6 + total_size; /* section size is declared in the header */
+    } else {
+        if (avail < 5) return 0;
+        entry_count = 256; /* upper bound; loop exits when data runs out */
+        ep  = p;
+        end = p + avail;
+    }
 
     FieldContent *fc = calloc(entry_count, sizeof *fc);
     if (!fc) return 0;
 
-    const uint8_t *ep  = p + 6;
-    const uint8_t *end = ep + total_size;
-    uint16_t count = 0;
+    /* Detect encoding style from the first entry's high byte.
+     * 0xFF → negative-encoded card-part IDs (0xFFFF=1, 0xFFFE=2, …).
+     * Other → positive IDs where the text null-terminator doubles as the
+     * 0x00 high byte of the next entry's part_id (the ep-- overlap trick). */
+    int neg_format = (ep + 1 <= end && ep[0] == 0xFF);
+    const uint8_t *base    = has_header ? (p + 6) : p;
+    const uint8_t *last_ep = ep; /* checkpointed after each valid entry */
 
+    uint16_t count = 0;
     for (uint16_t i = 0; i < entry_count && ep + 5 <= end; i++) {
-        uint16_t part_id   = r16(ep);
+        uint16_t raw       = r16(ep);
         uint16_t text_size = r16(ep + 2);
         uint8_t  style     = ep[4];
         ep += 5;
 
         if (ep + text_size > end) break;
 
+        /* Decode part_id and break on the sentinel zero that follows the last entry. */
+        uint16_t part_id = neg_format ? (uint16_t)(-(int16_t)raw) : (raw & 0x7FFF);
+        if (part_id == 0) break;
+
         fc[count].part_id = part_id;
         if (style == 0x00 && text_size > 0) {
-            size_t len = strnlen((const char *)ep, text_size);
+            /* For neg_format, text_size includes an overlap/null byte at the end
+             * that is not part of the visible text; exclude it from the copy. */
+            size_t limit = (neg_format && text_size > 0) ? text_size - 1 : text_size;
+            size_t len   = strnlen((const char *)ep, limit);
             fc[count].text = strndup((const char *)ep, len);
+        } else if (text_size > 0) {
+            fc[count].text = extract_styled_text(ep, text_size);
         }
-        /* style != 0: styled text (embedded run table before text); skip */
 
         ep += text_size;
-        /* Each entry's null terminator doubles as the 0x00 high byte of the
-         * next entry's part_id (part IDs always fit in a byte).  Back up by
-         * one so the next iteration reads the full uint16 correctly. */
-        if (ep > p + 6) ep--;
+        /* ep-- overlap: for positive-ID format the null terminator IS the 0x00
+         * high byte of the next part_id, so always step back.  For neg-format,
+         * step back only when the last byte is non-null (it's a 0xFF separator
+         * byte); when it's null it was a text terminator and the next entry
+         * starts directly at ep. */
+        if (ep > base && (!neg_format || ep[-1] != 0x00))
+            ep--;
         count++;
+        last_ep = ep; /* checkpoint: end of this valid entry */
     }
 
     *out = fc;
+    if (bytes_out)
+        *bytes_out = has_header ? fixed_bytes : (uint32_t)(last_ep - p);
     return count;
+}
+
+static uint16_t parse_bkgd_content(const uint8_t *p, uint32_t avail,
+                                    FieldContent **out) {
+    return parse_content(p, avail, 0, out, NULL);
 }
 
 /* ---- CARD / BKGD body layout ----
@@ -189,11 +270,11 @@ static uint16_t parse_card_content(const uint8_t *p, uint32_t avail,
  * CARD continues:
  *   +0x18  int32   bkgd_id
  *   +0x1C  uint16  part_count
- *   +0x1E  uint16  part_data_size  (bytes of field content after part records)
- *   +0x20  uint32  script_size
+ *   +0x1E  uint16  unknown (empirically equals part_count in tested stacks)
+ *   +0x20  uint32  parts_area_size (total bytes of all part records; NOT script size)
  *   +0x24  part records (variable)
- *   then   part data
- *   then   card script
+ *   then   content section
+ *   then   card script (null-terminated HyperTalk, may be absent)
  *
  * BKGD continues (no bkgd_id field):
  *   +0x18  uint16  part_count
@@ -211,12 +292,11 @@ static uint16_t parse_card_content(const uint8_t *p, uint32_t avail,
  */
 
 /* offsets in CARD body */
-#define CARD_OFF_BMAP_ID   0x04
-#define CARD_OFF_BKGD_ID   0x18
-#define CARD_OFF_PART_CNT  0x1C
-#define CARD_OFF_PDATA_SZ  0x1E
-#define CARD_OFF_SCRIPT_SZ 0x20
-#define CARD_OFF_PARTS     0x24
+#define CARD_OFF_BMAP_ID     0x04
+#define CARD_OFF_BKGD_ID     0x18
+#define CARD_OFF_PART_CNT    0x1C
+#define CARD_OFF_PARTS_BYTES 0x20 /* total bytes of part records (NOT script size) */
+#define CARD_OFF_PARTS       0x24
 
 /* offsets in BKGD body */
 #define BKGD_OFF_BMAP_ID   0x04
@@ -254,8 +334,6 @@ static Card *parse_card(const FileCtx *ctx, const BlockEntry *e,
     card->bkgd_id = (uint32_t)r32s(body + CARD_OFF_BKGD_ID);
 
     uint16_t part_count = r16(body + CARD_OFF_PART_CNT);
-    uint16_t pdata_size = r16(body + CARD_OFF_PDATA_SZ);
-    uint32_t script_sz  = r32(body + CARD_OFF_SCRIPT_SZ);
 
     /* BMAP id is stored in the card body, not the same as the card block id */
     int32_t bmap_id = r32s(body + CARD_OFF_BMAP_ID);
@@ -263,24 +341,47 @@ static Card *parse_card(const FileCtx *ctx, const BlockEntry *e,
     if (bmap)
         card->bitmap = bmap_decompress(blkbody(ctx, bmap), bmap->size - 12, w, h);
 
+    /* Some stacks prepend a 6-byte preamble to the part records section.
+     * Detect it by checking whether the first uint16 looks like a valid
+     * rec_size; if not, skip forward 6 bytes to the actual first record. */
+    uint32_t parts_start = CARD_OFF_PARTS;
+    if (part_count > 0 && body_size > parts_start + 2
+            && r16(body + parts_start) < PART_HDR_MIN)
+        parts_start += 6;
+
     uint32_t parts_bytes = 0;
-    if (part_count && body_size > CARD_OFF_PARTS) {
+    if (part_count && body_size > parts_start) {
         card->part_count = part_count;
-        card->parts = parse_parts(body + CARD_OFF_PARTS,
-                                   body_size - CARD_OFF_PARTS, part_count,
+        card->parts = parse_parts(body + parts_start,
+                                   body_size - parts_start, part_count,
                                    &parts_bytes);
     }
 
-    /* content section (field text) follows card-layer part records */
-    uint32_t content_off = CARD_OFF_PARTS + parts_bytes;
-    if (content_off + 6 <= body_size) {
-        card->content_count = parse_card_content(body + content_off,
-                                                  body_size - content_off,
-                                                  &card->content);
+    /* content section follows card-layer part records */
+    uint32_t content_off = parts_start + parts_bytes;
+    /* Detect content format: 0xFF leading byte means negative-encoded
+     * card-part references with no 6-byte header; otherwise use the header. */
+    int has_hdr = !(content_off + 1 < body_size && body[content_off] == 0xFF);
+    uint32_t content_bytes = 0;
+    if (content_off + (uint32_t)(has_hdr ? 6 : 5) <= body_size) {
+        card->content_count = parse_content(body + content_off,
+                                             body_size - content_off,
+                                             has_hdr, &card->content,
+                                             &content_bytes);
     }
 
-    card->script = extract_script(body, body_size, CARD_OFF_PARTS,
-                                   part_count, pdata_size, script_sz);
+    /* Card script is a null-terminated HyperTalk string immediately after the
+     * content section.  body[CARD_OFF_PARTS_BYTES] is the parts area byte count,
+     * not the script size, so we locate the script via content_bytes instead. */
+    uint32_t script_off = content_off + content_bytes;
+    while (script_off < body_size && body[script_off] == 0x00) script_off++;
+    if (script_off < body_size) {
+        uint8_t c = body[script_off];
+        /* Only accept text that looks like a HyperTalk handler or comment. */
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-')
+            card->script = strndup((const char *)(body + script_off),
+                                   body_size - script_off);
+    }
     return card;
 }
 
@@ -305,17 +406,24 @@ static Background *parse_bkgd(const FileCtx *ctx, const BlockEntry *e,
     if (bmap)
         bg->bitmap = bmap_decompress(blkbody(ctx, bmap), bmap->size - 12, w, h);
 
+    uint32_t parts_off = BKGD_OFF_PARTS;
+    uint32_t parts_bytes = 0;
     if (part_count && body_size > BKGD_OFF_PARTS) {
         /* Some backgrounds store a name between the fixed header and parts,
          * causing parts to start at 0x28 instead of 0x26. Detect this by
          * checking whether the rec_size at 0x26 looks valid (>= PART_HDR_MIN). */
-        uint32_t parts_off = BKGD_OFF_PARTS;
         if (body_size > parts_off + 2 && r16(body + parts_off) < PART_HDR_MIN)
             parts_off += 2;
         bg->part_count = part_count;
         bg->parts = parse_parts(body + parts_off,
-                                 body_size - parts_off, part_count, NULL);
+                                 body_size - parts_off, part_count, &parts_bytes);
     }
+
+    uint32_t content_off = parts_off + parts_bytes;
+    if (content_off + 5 <= body_size)
+        bg->content_count = parse_bkgd_content(body + content_off,
+                                                body_size - content_off,
+                                                &bg->content);
 
     bg->script = extract_script(body, body_size, BKGD_OFF_PARTS,
                                  part_count, pdata_size, script_sz);
@@ -415,6 +523,13 @@ fail:
     return NULL;
 }
 
+const char *bkgd_field_text(const Background *bg, uint16_t part_id) {
+    for (uint16_t i = 0; i < bg->content_count; i++)
+        if (bg->content[i].part_id == part_id)
+            return bg->content[i].text;
+    return NULL;
+}
+
 const char *card_field_text(const Card *c, uint16_t part_id) {
     for (uint16_t i = 0; i < c->content_count; i++)
         if (c->content[i].part_id == part_id)
@@ -453,6 +568,11 @@ void stack_free(Stack *s) {
             free(bg->parts[j].script);
         }
         free(bg->parts);
+        if (bg->content) {
+            for (uint16_t j = 0; j < bg->content_count; j++)
+                free(bg->content[j].text);
+            free(bg->content);
+        }
         free(bg->bitmap);
         free(bg->script);
     }
@@ -471,6 +591,21 @@ static void fourcc_str(uint32_t t, char out[5]) {
     out[4] = '\0';
     for (int i = 0; i < 4; i++)
         if (out[i] < 0x20 || out[i] > 0x7E) out[i] = '.';
+}
+
+/* Copy src into dst (dst_size bytes), escaping \r as the literal two chars
+ * \r so that terminal output isn't clobbered by carriage returns. */
+static void safe_text(const char *src, char *dst, size_t dst_size) {
+    size_t di = 0;
+    for (const char *s = src; *s && di + 2 < dst_size; s++) {
+        if ((unsigned char)*s == 0x0D) {
+            dst[di++] = '\\';
+            dst[di++] = 'r';
+        } else {
+            dst[di++] = *s;
+        }
+    }
+    dst[di] = '\0';
 }
 
 static void hex_dump(FILE *out, const uint8_t *data, uint32_t len) {
@@ -558,16 +693,24 @@ void stack_dump(const Stack *s, FILE *out) {
 
     for (uint32_t i = 0; i < s->bkgd_count; i++) {
         const Background *bg = &s->bkgds[i];
-        fprintf(out, "\n  BKGD[%u] id=%u  parts=%u  bitmap=%s\n",
-                i, bg->id, bg->part_count, bg->bitmap ? "yes" : "no");
+        fprintf(out, "\n  BKGD[%u] id=%u  parts=%u  content=%u  bitmap=%s\n",
+                i, bg->id, bg->part_count, bg->content_count,
+                bg->bitmap ? "yes" : "no");
         for (uint16_t j = 0; j < bg->part_count; j++) {
             const Part *p = &bg->parts[j];
             fprintf(out, "    part[%u] id=%u type=%u vis=%u "
-                    "rect=(%d,%d,%d,%d) style=%u font=%u size=%u name=%s\n",
+                    "rect=(%d,%d,%d,%d) style=%u font=%u size=%u txtstyle=0x%02x name=%s\n",
                     j, p->id, p->type, p->visible,
                     p->rect.top, p->rect.left, p->rect.bottom, p->rect.right,
-                    p->style, p->font_id, p->text_size,
+                    p->style, p->font_id, p->text_size, p->text_style,
                     p->name ? p->name : "(none)");
+        }
+        for (uint16_t j = 0; j < bg->content_count; j++) {
+            const FieldContent *fc = &bg->content[j];
+            const char *t = fc->text ? fc->text : "(none)";
+            char safe[130]; safe_text(t, safe, sizeof safe);
+            fprintf(out, "    content[%u] part_id=%u: %.120s%s\n",
+                    j, fc->part_id, safe, strlen(t) > 60 ? "..." : "");
         }
         if (bg->script)
             fprintf(out, "    script[%zu]: %.120s%s\n",
@@ -583,17 +726,18 @@ void stack_dump(const Stack *s, FILE *out) {
         for (uint16_t j = 0; j < c->part_count; j++) {
             const Part *p = &c->parts[j];
             fprintf(out, "    part[%u] id=%u type=%u vis=%u "
-                    "rect=(%d,%d,%d,%d) style=%u font=%u size=%u name=%s\n",
+                    "rect=(%d,%d,%d,%d) style=%u font=%u size=%u txtstyle=0x%02x name=%s\n",
                     j, p->id, p->type, p->visible,
                     p->rect.top, p->rect.left, p->rect.bottom, p->rect.right,
-                    p->style, p->font_id, p->text_size,
+                    p->style, p->font_id, p->text_size, p->text_style,
                     p->name ? p->name : "(none)");
         }
         for (uint16_t j = 0; j < c->content_count; j++) {
             const FieldContent *fc = &c->content[j];
             const char *t = fc->text ? fc->text : "(none)";
-            fprintf(out, "    content[%u] part_id=%u: %.60s%s\n",
-                    j, fc->part_id, t, strlen(t) > 60 ? "..." : "");
+            char safe[130]; safe_text(t, safe, sizeof safe);
+            fprintf(out, "    content[%u] part_id=%u: %.120s%s\n",
+                    j, fc->part_id, safe, strlen(t) > 60 ? "..." : "");
         }
         if (c->script)
             fprintf(out, "    script[%zu]: %.120s%s\n",
