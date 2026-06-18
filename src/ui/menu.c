@@ -143,7 +143,10 @@ MenuAction menu_draw(MenuBar *mb, struct nk_context *nk, int window_width, int b
     if (nk_begin(nk, "menubar", nk_rect(0, 0, (float)window_width, (float)bar_h),
                  NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
         nk_menubar_begin(nk);
-        nk_layout_row_begin(nk, NK_STATIC, (float)item_h, mb->menu_count);
+        /* +1 column for the banana icon slot at the far left */
+        nk_layout_row_begin(nk, NK_STATIC, (float)item_h, mb->menu_count + 1);
+        nk_layout_row_push(nk, (float)bar_h);
+        nk_spacing(nk, 1);  /* blank; icon drawn in SDL after NK renders */
 
         for (int m = 0; m < mb->menu_count; m++) {
             Menu *menu = &mb->menus[m];

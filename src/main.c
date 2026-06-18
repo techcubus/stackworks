@@ -128,6 +128,14 @@ int main(int argc, char *argv[]) {
 
         renderer_draw_card(r, s, cur);
         nk_sdl_render(NK_ANTI_ALIASING_ON);
+
+        /* Draw banana icon on top of the NK menu bar's left slot. */
+        if (r->banana_tex) {
+            int icon_size = menu_bar_h - 4;
+            SDL_Rect icon_dst = { 2, 2, icon_size, icon_size };
+            SDL_RenderCopy(r->renderer, r->banana_tex, NULL, &icon_dst);
+        }
+
         SDL_RenderPresent(r->renderer);
         SDL_Delay(16);
     }

@@ -4,6 +4,7 @@
 #include "nuklear_sdl_renderer.h"
 
 #include "render.h"
+#include "banana_icon.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -77,6 +78,18 @@ Renderer *renderer_create(uint16_t width, uint16_t height) {
         fprintf(stderr, "stackworks: no font found, field text will not render\n");
     }
 
+    /* Upload banana icon to a texture with alpha blending. */
+    SDL_Surface *bsurf = SDL_CreateRGBSurfaceFrom(
+        (void *)banana_icon_pixels,
+        BANANA_ICON_W, BANANA_ICON_H, 32, BANANA_ICON_W * 4,
+        0x00FF0000u, 0x0000FF00u, 0x000000FFu, 0xFF000000u);
+    if (bsurf) {
+        r->banana_tex = SDL_CreateTextureFromSurface(r->renderer, bsurf);
+        SDL_FreeSurface(bsurf);
+        if (r->banana_tex)
+            SDL_SetTextureBlendMode(r->banana_tex, SDL_BLENDMODE_BLEND);
+    }
+
     return r;
 }
 
@@ -98,6 +111,7 @@ void renderer_destroy(Renderer *r) {
     for (int i = 0; i < r->font_cache_count; i++)
         TTF_CloseFont(r->font_cache[i].font);
     TTF_Quit();
+    if (r->banana_tex) SDL_DestroyTexture(r->banana_tex);
     SDL_DestroyTexture(r->tex);
     SDL_DestroyRenderer(r->renderer);
     SDL_DestroyWindow(r->window);

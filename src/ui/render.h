@@ -29,6 +29,7 @@ typedef struct {
     int                font_cache_count;
     /* Pre-baked Nuklear fonts for zoom levels 1×–5×; index = zoom - 1. */
     struct nk_font    *nk_fonts[5];
+    SDL_Texture       *banana_tex;  /* 28×28 ARGB banana icon for the menu bar */
 } Renderer;
 
 Renderer *renderer_create(uint16_t width, uint16_t height);
