@@ -138,6 +138,65 @@ convert /tmp/test_138_Real      /tmp/138.png
 
 ---
 
+## HyperCard stack inspection
+
+```sh
+# Dump all blocks, parts, and field text for a stack
+./stackworks -d field_day.hc
+
+# Scan the STAK body for a Pascal string containing the HFS stack name
+python3 -c "
+data = open('field_day.hc','rb').read()
+off = 0
+while off + 12 <= len(data):
+    bsize = int.from_bytes(data[off:off+4],'big')
+    btype = data[off+4:off+8]
+    if btype == b'STAK':
+        sb = data[off+12:]
+        plen = sb[0x234]
+        print(f'name plen={plen}')
+        if plen: print('  ', sb[0x235:0x235+plen])
+        break
+    off += bsize
+"
+
+# Check block structure of a file (catches non-standard headers like Home.hc)
+python3 -c "
+data = open('Home.hc','rb').read()
+print(f'size: {len(data)}')
+off = 0
+while off + 12 <= len(data):
+    bsize = int.from_bytes(data[off:off+4],'big')
+    btype = data[off+4:off+8]
+    bid   = int.from_bytes(data[off+8:off+12],'big',signed=True)
+    print(f'0x{off:06X}  {btype}  size={bsize}  id={bid}')
+    if bsize < 12: break
+    off += bsize
+"
+
+# Search all .hc files for a Pascal string at a given STAK body offset
+python3 -c "
+import os
+for f in os.listdir('.'):
+    if not f.endswith('.hc'): continue
+    data = open(f,'rb').read()
+    # find STAK block
+    off = 0
+    while off + 12 <= len(data):
+        bsize = int.from_bytes(data[off:off+4],'big')
+        if data[off+4:off+8] == b'STAK':
+            sb = data[off+12:]
+            n = sb[0x234]
+            if n and n <= 127: print(f, repr(sb[0x235:0x235+n]))
+            else:               print(f, '(no name)')
+            break
+        if bsize < 12: break
+        off += bsize
+"
+```
+
+---
+
 ## Git
 
 ```sh
@@ -210,6 +269,78 @@ Reference list entry (12 bytes):
   [8..11] reserved
 
 Resource data block: 4-byte big-endian length, then raw bytes.
+```
+
+---
+
+## HyperCard block format (quick reference)
+
+All integers big-endian. Block header is 12 bytes:
+```
+[0..3]  block size (includes 12-byte header)
+[4..7]  FourCC: STAK, CARD, BKGD, BMAP, LIST, PAGE, MAST, STBL, FTBL
+[8..11] block ID (int32; STAK always -1)
+```
+Body starts at byte 12 (offset from body = offset from block − 12).
+
+### STAK body offsets (confirmed empirically)
+```
+0x18   uint32  background count
+0x20   uint32  total card count
+0x1AC  uint16  card height (pixels)
+0x1AE  uint16  card width (pixels)
+0x234  Pascal string  HFS path of stack (length byte + chars)
+                      e.g. "HD:.Developing Stacks:Home Regular:Home"
+                      last colon-component = stack name
+                      zero if stack was never saved with a name
+```
+
+### CARD / BKGD body layout
+```
+0x00   uint32  flags (card) / bkgd id (bkgd)
+0x04   uint32  bitmap block ID (0 = no bitmap)
+...
+0x10   uint16  number of parts
+0x12   uint16  last part ID
+0x14   uint32  total size of all part records
+0x18   uint16  number of content entries
+0x1A   uint16  unknown
+[part records start here for CARD; BKGD may have a name before parts]
+```
+
+### Part record layout (fields and buttons)
+Offset from start of this part's record:
+```
+0x00   uint16  record size (includes this field)
+0x02   uint16  part ID
+0x04   uint8   type (1=button, 2=field)
+0x05   uint8   flags (bit0=visible, bit5=don't wrap, bit6=don't search, bit7=shared text)
+0x06   int16   rect.top
+0x08   int16   rect.left
+0x0A   int16   rect.bottom
+0x0C   int16   rect.right
+0x0E   uint8   style (high nibble=button style, for fields see below)
+0x0F   uint8   field style (0=transparent,1=opaque,2=rect,4=shadow,7=scroll)
+0x10   uint16  text_align  (0=left, 1=center, 2=right)
+0x12   uint16  unknown flags (0xFFFF = inherit)
+0x14   uint16  unknown flags2
+0x16   uint16  font_family_id (3=Geneva, 21=Helvetica, 22=Times, 20=Helvetica)
+0x18   uint16  text_size (points; 0 = stack default)
+0x1A   uint8   text_style  bold=0x01, italic=0x02, underline=0x04,
+                            outline=0x08, shadow=0x10, condense=0x20, extend=0x40
+0x1B   uint8   line_height
+0x1C   null-terminated name string
+       [script follows name, also null-terminated]
+```
+
+### Content section (follows part records in CARD/BKGD)
+```
+Entry header (4 bytes):
+  uint16  part_id  (negative = background field; positive = card field)
+  uint16  entry size (includes the 4-byte header)
+Entry body:
+  uint8   0x00  (marks this as a text entry, not styled)
+  char[]  text  (Mac Roman, \r-delimited lines, not null-terminated)
 ```
 
 ---
