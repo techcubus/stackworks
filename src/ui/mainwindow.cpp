@@ -1,12 +1,9 @@
 #include "mainwindow.h"
 #include "cardview.h"
-#include "banana_icon.h"
 
 #include <QMenuBar>
 #include <QMenu>
 #include <QAction>
-#include <QLabel>
-#include <QPixmap>
 #include <QFileDialog>
 #include <QMessageBox>
 #include <QFileInfo>
@@ -44,14 +41,6 @@ void MainWindow::buildMenus() {
         QAction *act = viewMenu->addAction(QString::fromUtf8("Zoom %1\xC3\x97").arg(z));
         connect(act, &QAction::triggered, this, [this, z] { zoomTo(z); });
     }
-
-    /* hand-drawn banana icon in the menu bar's top-left corner */
-    QImage bananaImg(reinterpret_cast<const uchar *>(banana_icon_pixels),
-                      BANANA_ICON_W, BANANA_ICON_H, QImage::Format_ARGB32);
-    QLabel *iconLabel = new QLabel(this);
-    iconLabel->setPixmap(QPixmap::fromImage(bananaImg.copy()));
-    iconLabel->setContentsMargins(4, 2, 4, 2);
-    menuBar()->setCornerWidget(iconLabel, Qt::TopLeftCorner);
 }
 
 bool MainWindow::loadStack(const QString &path) {
