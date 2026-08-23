@@ -4,7 +4,6 @@ project(stackworks LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_AUTOMOC ON)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
@@ -19,6 +18,7 @@ add_executable(stackworks
     src/ui/mainwindow.cpp
     src/ui/cardview.cpp
 )
+set_target_properties(stackworks PROPERTIES AUTOMOC ON)
 target_include_directories(stackworks PRIVATE src)
 target_compile_definitions(stackworks PRIVATE _POSIX_C_SOURCE=200809L)
 target_compile_options(stackworks PRIVATE -Wall -Wextra)
