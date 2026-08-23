@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define FOURCC(a,b,c,d) \
     ((uint32_t)(a)<<24 | (uint32_t)(b)<<16 | (uint32_t)(c)<<8 | (uint32_t)(d))
 
@@ -97,5 +101,9 @@ Background *stack_find_bkgd(const Stack *s, uint32_t id);
 const char *card_field_text(const Card *c, uint16_t part_id);
 const char *bkgd_field_text(const Background *bg, uint16_t part_id);
 void        stack_dump(const Stack *s, FILE *out);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* STACK_H */

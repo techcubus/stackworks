@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Decompress a BMAP block body (starting at the byte after the 12-byte block
  * header) into a 1-bit bitmap for the full card.
  *
@@ -11,5 +15,9 @@
  * Caller must free() the result. */
 uint8_t *bmap_decompress(const uint8_t *body, uint32_t body_size,
                           uint16_t card_w, uint16_t card_h);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* WOBA_H */

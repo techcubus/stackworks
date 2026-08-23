@@ -1,12 +1,11 @@
 stackworks
 cardviewer
-src/*.o
-src/*.d
-src/ui/*.o
-src/ui/*.d
+build/
 *.hc
 *.hc.rsrc
 *.img
 *.data
 *.dirtychunks
 *.png
+tools/rsrcextract
+tools/pict2ppm
