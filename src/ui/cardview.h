@@ -28,6 +28,8 @@ private:
     void   drawParts(QImage &img, const Part *parts, uint16_t count) const;
     void   drawFields(QPainter &painter) const;
     void   drawOneField(QPainter &painter, const Part *part, const char *text) const;
+    void   drawButtons(QPainter &painter) const;
+    void   drawOneButton(QPainter &painter, const Part *part) const;
 
     const Stack *stack_ = nullptr;
     uint32_t     cardIdx_ = 0;

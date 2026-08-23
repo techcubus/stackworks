@@ -54,6 +54,12 @@ void CardView::drawParts(QImage &img, const Part *parts, uint16_t count) const {
     for (uint16_t i = 0; i < count; i++) {
         const Part &p = parts[i];
         if (!p.visible) continue;
+        /* Rectangle/shadow buttons get real chrome drawn in drawButtons();
+         * skip the debug outline for those so it doesn't double up. Other
+         * (unconfirmed) button styles keep the blue debug box for now. */
+        if (p.type == PART_BUTTON &&
+            (p.style == BTN_STYLE_RECTANGLE || p.style == BTN_STYLE_SHADOW))
+            continue;
         /* blue for buttons, green for fields */
         QRgb color = (p.type == PART_BUTTON) ? 0xFF0000CCu : 0xFF006600u;
         int t = p.rect.top, l = p.rect.left, b = p.rect.bottom, r = p.rect.right;
@@ -152,6 +158,66 @@ void CardView::drawOneField(QPainter &painter, const Part *p, const char *text) 
     painter.setClipping(false);
 }
 
+/* Only the rectangle and shadow button styles are confirmed (see BTN_STYLE_*
+ * in stack.h); other/unrecognised styles fall back to the debug outline
+ * drawn by drawParts() rather than guessing at their appearance. */
+void CardView::drawOneButton(QPainter &painter, const Part *p) const {
+    if (p->style != BTN_STYLE_RECTANGLE && p->style != BTN_STYLE_SHADOW) return;
+
+    int fx = p->rect.left * zoom_;
+    int fy = p->rect.top * zoom_;
+    int fw = (p->rect.right - p->rect.left) * zoom_;
+    int fh = (p->rect.bottom - p->rect.top) * zoom_;
+    if (fw <= 0 || fh <= 0) return;
+
+    painter.setClipping(false);
+    QRect btnRect(fx, fy, fw, fh);
+
+    /* No fill: button rects often sit over hand-drawn art in the card
+     * bitmap (an invisible click zone laid over painted button art), so
+     * painting an opaque background would erase it. Just draw the chrome. */
+    painter.setPen(Qt::black);
+    painter.drawRect(QRect(btnRect.topLeft(), QSize(fw - 1, fh - 1)));
+
+    /* shadow: thin offset bars along the bottom and right edges, rather
+     * than a filled rect, so the button's own interior is left untouched */
+    if (p->style == BTN_STYLE_SHADOW) {
+        int sh = 2 * zoom_;
+        painter.fillRect(QRect(fx + sh, fy + fh, fw, sh), Qt::black);
+        painter.fillRect(QRect(fx + fw, fy + sh, sh, fh), Qt::black);
+    }
+
+    if (p->name && *p->name) {
+        int pt_size = (p->text_size > 0 ? (int)p->text_size : 12) * zoom_;
+        QFont font = painter.font();
+        font.setPointSize(pt_size);
+        font.setBold(p->text_style & 0x01);
+        font.setItalic(p->text_style & 0x02);
+        font.setUnderline(p->text_style & 0x04);
+        painter.setFont(font);
+        painter.setPen(Qt::black);
+        painter.drawText(btnRect, Qt::AlignCenter, QString::fromLatin1(p->name));
+    }
+}
+
+void CardView::drawButtons(QPainter &painter) const {
+    const Card *card = &stack_->cards[cardIdx_];
+    Background *bg = stack_find_bkgd(stack_, card->bkgd_id);
+
+    if (bg) {
+        for (uint16_t i = 0; i < bg->part_count; i++) {
+            const Part *p = &bg->parts[i];
+            if (p->type != PART_BUTTON || !p->visible) continue;
+            drawOneButton(painter, p);
+        }
+    }
+    for (uint16_t i = 0; i < card->part_count; i++) {
+        const Part *p = &card->parts[i];
+        if (p->type != PART_BUTTON || !p->visible) continue;
+        drawOneButton(painter, p);
+    }
+}
+
 void CardView::drawFields(QPainter &painter) const {
     const Card *card = &stack_->cards[cardIdx_];
     Background *bg = stack_find_bkgd(stack_, card->bkgd_id);
@@ -195,4 +261,5 @@ void CardView::paintEvent(QPaintEvent *) {
 
     painter.setRenderHint(QPainter::TextAntialiasing, true);
     drawFields(painter);
+    drawButtons(painter);
 }
