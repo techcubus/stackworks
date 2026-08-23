@@ -26,6 +26,12 @@ void CardView::setZoom(int zoom) {
     update();
 }
 
+void CardView::setShowAllButtons(bool show) {
+    if (showAllButtons_ == show) return;
+    showAllButtons_ = show;
+    update();
+}
+
 QSize CardView::sizeHint() const {
     if (!stack_) return QSize(512, 342);
     return QSize(stack_->card_width * zoom_, stack_->card_height * zoom_);
@@ -218,6 +224,34 @@ void CardView::drawButtons(QPainter &painter) const {
     }
 }
 
+/* HyperCard's Command-Option "show all buttons" reveal: outline every
+ * button on the card, including invisible ones, regardless of style. */
+void CardView::drawButtonBoundsOverlay(QPainter &painter) const {
+    const Card *card = &stack_->cards[cardIdx_];
+    Background *bg = stack_find_bkgd(stack_, card->bkgd_id);
+
+    painter.setClipping(false);
+    QPen pen(QColor(255, 0, 0, 200));
+    pen.setStyle(Qt::DashLine);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+
+    auto drawBounds = [&](const Part *parts, uint16_t count) {
+        for (uint16_t i = 0; i < count; i++) {
+            const Part &p = parts[i];
+            if (p.type != PART_BUTTON) continue;
+            int fx = p.rect.left * zoom_;
+            int fy = p.rect.top * zoom_;
+            int fw = (p.rect.right - p.rect.left) * zoom_;
+            int fh = (p.rect.bottom - p.rect.top) * zoom_;
+            if (fw <= 0 || fh <= 0) continue;
+            painter.drawRect(QRect(fx, fy, fw - 1, fh - 1));
+        }
+    };
+    if (bg) drawBounds(bg->parts, bg->part_count);
+    drawBounds(card->parts, card->part_count);
+}
+
 void CardView::drawFields(QPainter &painter) const {
     const Card *card = &stack_->cards[cardIdx_];
     Background *bg = stack_find_bkgd(stack_, card->bkgd_id);
@@ -262,4 +296,5 @@ void CardView::paintEvent(QPaintEvent *) {
     painter.setRenderHint(QPainter::TextAntialiasing, true);
     drawFields(painter);
     drawButtons(painter);
+    if (showAllButtons_) drawButtonBoundsOverlay(painter);
 }

@@ -18,6 +18,10 @@ public:
     void setZoom(int zoom);
     int  zoom() const { return zoom_; }
 
+    /* HyperCard's "show all button borders" reveal (Command-Option, mapped
+     * here to Ctrl+Alt since there's no Command key on Linux). */
+    void setShowAllButtons(bool show);
+
     QSize sizeHint() const override;
 
 protected:
@@ -30,10 +34,12 @@ private:
     void   drawOneField(QPainter &painter, const Part *part, const char *text) const;
     void   drawButtons(QPainter &painter) const;
     void   drawOneButton(QPainter &painter, const Part *part) const;
+    void   drawButtonBoundsOverlay(QPainter &painter) const;
 
     const Stack *stack_ = nullptr;
     uint32_t     cardIdx_ = 0;
     int          zoom_ = 2;
+    bool         showAllButtons_ = false;
 };
 
 #endif /* UI_CARDVIEW_H */

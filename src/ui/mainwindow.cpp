@@ -129,6 +129,13 @@ void MainWindow::showAbout() {
 }
 
 void MainWindow::keyPressEvent(QKeyEvent *e) {
+    /* HyperCard's Command-Option "show all buttons" reveal (Ctrl+Alt here,
+     * since Linux has no Command key). */
+    if (e->key() == Qt::Key_Control || e->key() == Qt::Key_Alt) {
+        view_->setShowAllButtons(e->modifiers().testFlag(Qt::ControlModifier) &&
+                                  e->modifiers().testFlag(Qt::AltModifier));
+    }
+
     switch (e->key()) {
     case Qt::Key_Right: case Qt::Key_Space: case Qt::Key_Return: case Qt::Key_Enter:
         goNext(); break;
@@ -144,4 +151,10 @@ void MainWindow::keyPressEvent(QKeyEvent *e) {
         QMainWindow::keyPressEvent(e);
         return;
     }
+}
+
+void MainWindow::keyReleaseEvent(QKeyEvent *e) {
+    if (e->key() == Qt::Key_Control || e->key() == Qt::Key_Alt)
+        view_->setShowAllButtons(false);
+    QMainWindow::keyReleaseEvent(e);
 }
