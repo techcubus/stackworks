@@ -15,6 +15,7 @@ add_executable(stackworks
     src/main.cpp
     src/stack.c
     src/woba.c
+    src/rsrc.c
     src/ui/mainwindow.cpp
     src/ui/cardview.cpp
 )
@@ -24,7 +25,7 @@ target_compile_definitions(stackworks PRIVATE _POSIX_C_SOURCE=200809L)
 target_compile_options(stackworks PRIVATE -Wall -Wextra)
 target_link_libraries(stackworks PRIVATE Qt6::Widgets)
 
-add_executable(rsrcextract tools/rsrcextract.c)
+add_executable(rsrcextract tools/rsrcextract.c src/rsrc.c)
 target_compile_options(rsrcextract PRIVATE -Wall -Wextra)
 
 add_executable(pict2ppm tools/pict2ppm.c)

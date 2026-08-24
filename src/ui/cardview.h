@@ -34,7 +34,10 @@ private:
     void   drawOneField(QPainter &painter, const Part *part, const char *text) const;
     void   drawButtons(QPainter &painter) const;
     void   drawOneButton(QPainter &painter, const Part *part) const;
+    void   drawButtonIcon(QPainter &painter, const QRect &btnRect,
+                           const QImage &icon, const Part *part) const;
     void   drawButtonBoundsOverlay(QPainter &painter) const;
+    QImage iconImage(uint16_t iconId) const;
 
     const Stack *stack_ = nullptr;
     uint32_t     cardIdx_ = 0;

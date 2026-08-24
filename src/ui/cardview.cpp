@@ -60,11 +60,13 @@ void CardView::drawParts(QImage &img, const Part *parts, uint16_t count) const {
     for (uint16_t i = 0; i < count; i++) {
         const Part &p = parts[i];
         if (!p.visible) continue;
-        /* Rectangle/shadow buttons get real chrome drawn in drawButtons();
-         * skip the debug outline for those so it doesn't double up. Other
-         * (unconfirmed) button styles keep the blue debug box for now. */
+        /* Rectangle/shadow buttons, and any button with a resolved icon,
+         * get real chrome drawn in drawButtons(); skip the debug outline
+         * for those so it doesn't double up. Other (unconfirmed, iconless)
+         * button styles keep the blue debug box for now. */
         if (p.type == PART_BUTTON &&
-            (p.style == BTN_STYLE_RECTANGLE || p.style == BTN_STYLE_SHADOW))
+            (p.style == BTN_STYLE_RECTANGLE || p.style == BTN_STYLE_SHADOW ||
+             stack_find_icon(stack_, p.icon_id)))
             continue;
         /* blue for buttons, green for fields */
         QRgb color = (p.type == PART_BUTTON) ? 0xFF0000CCu : 0xFF006600u;
@@ -164,36 +166,86 @@ void CardView::drawOneField(QPainter &painter, const Part *p, const char *text) 
     painter.setClipping(false);
 }
 
-/* Only the rectangle and shadow button styles are confirmed (see BTN_STYLE_*
- * in stack.h); other/unrecognised styles fall back to the debug outline
- * drawn by drawParts() rather than guessing at their appearance. */
-void CardView::drawOneButton(QPainter &painter, const Part *p) const {
-    if (p->style != BTN_STYLE_RECTANGLE && p->style != BTN_STYLE_SHADOW) return;
+/* Decode a button's ICON resource (32x32 1-bit, MSB-first) into an opaque
+ * black-on-white QImage. Null if the button has no icon_id, or the stack
+ * has no resource fork / doesn't carry that ICON id. */
+QImage CardView::iconImage(uint16_t iconId) const {
+    if (!iconId || !stack_) return QImage();
+    const uint8_t *bits = stack_find_icon(stack_, iconId);
+    if (!bits) return QImage();
+    QImage img(32, 32, QImage::Format_ARGB32);
+    img.fill(0xFFFFFFFFu);
+    blit1Bit(img, bits, false);
+    return img;
+}
 
+/* Icon centered in the button rect, scaled to zoom (nearest-neighbour, to
+ * match the card bitmap's pixel-art look); if there's room below it and
+ * the button has a name, that's drawn as a caption underneath -- mirrors
+ * HyperCard's own icon-button layout. */
+void CardView::drawButtonIcon(QPainter &painter, const QRect &btnRect,
+                               const QImage &icon, const Part *p) const {
+    int iw = icon.width()  * zoom_;
+    int ih = icon.height() * zoom_;
+    bool caption = p->name && *p->name && btnRect.height() >= ih + 12 * zoom_;
+
+    int ix = btnRect.left() + (btnRect.width() - iw) / 2;
+    int iy = caption ? btnRect.top() + 2 * zoom_
+                      : btnRect.top() + (btnRect.height() - ih) / 2;
+    painter.drawImage(QRect(ix, iy, iw, ih), icon);
+
+    if (caption) {
+        QRect capRect(btnRect.left(), iy + ih, btnRect.width(),
+                      btnRect.bottom() - (iy + ih));
+        int pt_size = (p->text_size > 0 ? (int)p->text_size : 9) * zoom_;
+        QFont font = painter.font();
+        font.setPointSize(pt_size);
+        font.setBold(p->text_style & 0x01);
+        font.setItalic(p->text_style & 0x02);
+        font.setUnderline(p->text_style & 0x04);
+        painter.setFont(font);
+        painter.setPen(Qt::black);
+        painter.drawText(capRect, Qt::AlignHCenter | Qt::AlignTop, QString::fromLatin1(p->name));
+    }
+}
+
+/* Rectangle/shadow chrome is only confirmed for BTN_STYLE_RECTANGLE and
+ * BTN_STYLE_SHADOW (see stack.h); other styles fall back to the debug
+ * outline in drawParts() unless the button has a resolvable icon, in
+ * which case we at least know how to draw that much. */
+void CardView::drawOneButton(QPainter &painter, const Part *p) const {
     int fx = p->rect.left * zoom_;
     int fy = p->rect.top * zoom_;
     int fw = (p->rect.right - p->rect.left) * zoom_;
     int fh = (p->rect.bottom - p->rect.top) * zoom_;
     if (fw <= 0 || fh <= 0) return;
 
+    QImage icon = iconImage(p->icon_id);
+    bool knownChrome = (p->style == BTN_STYLE_RECTANGLE || p->style == BTN_STYLE_SHADOW);
+    if (!knownChrome && icon.isNull()) return;
+
     painter.setClipping(false);
     QRect btnRect(fx, fy, fw, fh);
 
-    /* No fill: button rects often sit over hand-drawn art in the card
-     * bitmap (an invisible click zone laid over painted button art), so
-     * painting an opaque background would erase it. Just draw the chrome. */
-    painter.setPen(Qt::black);
-    painter.drawRect(QRect(btnRect.topLeft(), QSize(fw - 1, fh - 1)));
+    if (knownChrome) {
+        /* No fill: button rects often sit over hand-drawn art in the card
+         * bitmap (an invisible click zone laid over painted button art), so
+         * painting an opaque background would erase it. Just draw the chrome. */
+        painter.setPen(Qt::black);
+        painter.drawRect(QRect(btnRect.topLeft(), QSize(fw - 1, fh - 1)));
 
-    /* shadow: thin offset bars along the bottom and right edges, rather
-     * than a filled rect, so the button's own interior is left untouched */
-    if (p->style == BTN_STYLE_SHADOW) {
-        int sh = 2 * zoom_;
-        painter.fillRect(QRect(fx + sh, fy + fh, fw, sh), Qt::black);
-        painter.fillRect(QRect(fx + fw, fy + sh, sh, fh), Qt::black);
+        /* shadow: thin offset bars along the bottom and right edges, rather
+         * than a filled rect, so the button's own interior is left untouched */
+        if (p->style == BTN_STYLE_SHADOW) {
+            int sh = 2 * zoom_;
+            painter.fillRect(QRect(fx + sh, fy + fh, fw, sh), Qt::black);
+            painter.fillRect(QRect(fx + fw, fy + sh, sh, fh), Qt::black);
+        }
     }
 
-    if (p->name && *p->name) {
+    if (!icon.isNull()) {
+        drawButtonIcon(painter, btnRect, icon, p);
+    } else if (p->name && *p->name) {
         int pt_size = (p->text_size > 0 ? (int)p->text_size : 12) * zoom_;
         QFont font = painter.font();
         font.setPointSize(pt_size);

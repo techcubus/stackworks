@@ -74,7 +74,11 @@ static const uint8_t *blkbody(const FileCtx *ctx, const BlockEntry *e) {
  *   +0x0F  uint8   flags2
  *   +0x10  uint8[14] text properties:
  *            +0x10 uint16 text_align (0=left, 1=center, 2=right)
- *            +0x12 uint16 unknown flags (0xFFFF = inherit?)
+ *            +0x12 uint16 buttons only: ICON resource id (0 = no icon).
+ *                  Confirmed against readymade_buttons.hc's resource fork,
+ *                  where this field matches real ICON ids for every icon
+ *                  button in the stack. Fields presumably use it for
+ *                  something else; unconfirmed there.
  *            +0x14 uint16 unknown flags2
  *            +0x16 uint16 font_family_id (Mac font system ID)
  *            +0x18 uint16 text_size (points)
@@ -111,6 +115,11 @@ static Part *parse_parts(const uint8_t *data, uint32_t avail, uint16_t count,
             parts[i].style = (p[0x0E] >> 4) & 0x0F;
         else
             parts[i].style = p[0x0F];
+
+        /* Buttons only: icon resource id at +0x12 (confirmed against
+         * readymade_buttons.hc's resource fork -- see stack.h). */
+        if (parts[i].type == PART_BUTTON && rec_size > 0x13)
+            parts[i].icon_id = r16(p + 0x12);
 
         /* font attributes — only present when record is large enough.
          * text_style is a single byte at +0x1A (not +0x14 which is unknown flags).
@@ -465,14 +474,24 @@ Stack *stack_load(const char *path) {
     }
     fclose(f);
 
+    /* If this is a MacBinary-encoded file (e.g. copied out with
+     * `hcopy -m`), the data fork -- where STAK/CARD/BKGD/BMAP blocks
+     * live -- sits after a 128-byte header, and its resource fork
+     * (ICON etc.) follows that. A bare data-fork file (`hcopy -r`) has
+     * blocks starting at byte 0 instead; rsrc_open_macbinary() returns
+     * NULL for those and base/base_size fall back to the whole file. */
+    RsrcFork *rf = rsrc_open_macbinary(data, (size_t)fsz);
+    const uint8_t *base      = rf ? data + rf->data_off : data;
+    uint32_t       base_size = rf ? rf->data_len : (uint32_t)fsz;
+
     /* build block index by linear scan */
-    FileCtx ctx = { .data = data, .size = (size_t)fsz };
+    FileCtx ctx = { .data = base, .size = base_size };
     uint32_t off = 0;
-    while (off + 12 <= (uint32_t)fsz) {
-        uint32_t bsize = r32(data + off);
-        uint32_t btype = r32(data + off + 4);
-        int32_t  bid   = r32s(data + off + 8);
-        if (bsize < 12 || off + bsize > (uint32_t)fsz) break;
+    while (off + 12 <= base_size) {
+        uint32_t bsize = r32(base + off);
+        uint32_t btype = r32(base + off + 4);
+        int32_t  bid   = r32s(base + off + 8);
+        if (bsize < 12 || off + bsize > base_size) break;
         ctx_add(&ctx, btype, bid, off, bsize);
         off += bsize;
     }
@@ -543,13 +562,16 @@ Stack *stack_load(const char *path) {
                 expected_cards, s->card_count);
 
     free(ctx.blocks);
-    s->raw_data = data;  /* kept for stack_dump(); freed by stack_free() */
-    s->raw_size = (size_t)fsz;
+    s->raw_data  = (uint8_t *)base;  /* kept for stack_dump() */
+    s->raw_size  = base_size;
+    s->file_data = data;             /* owns the allocation; freed by stack_free() */
+    s->rsrc      = rf;
     return s;
 
 fail:
     free(ctx.blocks);
     free(data);
+    rsrc_free(rf);
     if (s) { free(s->bkgds); free(s->cards); free(s); }
     return NULL;
 }
@@ -608,8 +630,16 @@ void stack_free(Stack *s) {
         free(bg->script);
     }
     free(s->bkgds);
-    free(s->raw_data);
+    free(s->file_data);
+    rsrc_free(s->rsrc);
     free(s);
+}
+
+const uint8_t *stack_find_icon(const Stack *s, uint16_t icon_id) {
+    if (!s || !icon_id) return NULL;
+    const RsrcEntry *e = rsrc_find(s->rsrc, FOURCC('I','C','O','N'), (int16_t)icon_id);
+    if (!e || e->size < 128) return NULL;
+    return e->data;
 }
 
 /* ---- dump ---- */
@@ -730,10 +760,10 @@ void stack_dump(const Stack *s, FILE *out) {
         for (uint16_t j = 0; j < bg->part_count; j++) {
             const Part *p = &bg->parts[j];
             fprintf(out, "    part[%u] id=%u type=%u vis=%u "
-                    "rect=(%d,%d,%d,%d) style=%u font=%u size=%u txtstyle=0x%02x name=%s\n",
+                    "rect=(%d,%d,%d,%d) style=%u icon=%u font=%u size=%u txtstyle=0x%02x name=%s\n",
                     j, p->id, p->type, p->visible,
                     p->rect.top, p->rect.left, p->rect.bottom, p->rect.right,
-                    p->style, p->font_id, p->text_size, p->text_style,
+                    p->style, p->icon_id, p->font_id, p->text_size, p->text_style,
                     p->name ? p->name : "(none)");
         }
         for (uint16_t j = 0; j < bg->content_count; j++) {
@@ -757,10 +787,10 @@ void stack_dump(const Stack *s, FILE *out) {
         for (uint16_t j = 0; j < c->part_count; j++) {
             const Part *p = &c->parts[j];
             fprintf(out, "    part[%u] id=%u type=%u vis=%u "
-                    "rect=(%d,%d,%d,%d) style=%u font=%u size=%u txtstyle=0x%02x name=%s\n",
+                    "rect=(%d,%d,%d,%d) style=%u icon=%u font=%u size=%u txtstyle=0x%02x name=%s\n",
                     j, p->id, p->type, p->visible,
                     p->rect.top, p->rect.left, p->rect.bottom, p->rect.right,
-                    p->style, p->font_id, p->text_size, p->text_style,
+                    p->style, p->icon_id, p->font_id, p->text_size, p->text_style,
                     p->name ? p->name : "(none)");
         }
         for (uint16_t j = 0; j < c->content_count; j++) {
